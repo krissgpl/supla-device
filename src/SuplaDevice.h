@@ -23,6 +23,7 @@
 #include "supla/uptime.h"
 #include "supla/clock/clock.h"
 #include "supla/storage/config.h"
+#include "supla/device/last_state_logger.h"
 
 #define ACTIVITY_TIMEOUT 30
 
@@ -110,11 +111,17 @@ class SuplaDeviceClass {
 
   void enterConfigMode();
   void enterNormalMode();
-  void leaveConfigMode();
+  // Schedules timeout to leave config mode. When provided timeout is 0
+  // then leaving config mode will be done asap.
+  void scheduleLeaveConfigMode(int timeout = 0);
+  void leaveConfigModeAndRestart();
   void saveStateToStorage();
+  void disableCfgModeTimeout();
 
   int getCurrentStatus();
   void loadDeviceConfig();
+  bool prepareLastStateLog();
+  char *getLastStateLog();
 
  protected:
   void *srpc;
@@ -125,7 +132,8 @@ class SuplaDeviceClass {
 
   unsigned long lastIterateTime;
   unsigned long waitForIterate;
-  unsigned long enterCfgModeTimestamp = 0;
+  unsigned long deviceRestartTimeoutTimestamp = 0;
+  unsigned int forceRestartTimeMs = 0;
   enum Supla::DeviceMode deviceMode = Supla::DEVICE_MODE_NOT_SET;
   int currentStatus;
 
@@ -133,6 +141,7 @@ class SuplaDeviceClass {
 
   Supla::Uptime uptime;
   Supla::Clock *clock;
+  Supla::Device::LastStateLogger *lastStateLogger = nullptr;
 
   bool isSrpcInitialized(bool msg);
   // used to indicate if begin() method was called - it will be set to

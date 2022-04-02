@@ -40,8 +40,6 @@ namespace Supla {
       Config();
       virtual ~Config();
       virtual bool init() = 0;
-      virtual bool loadDeviceConfig() = 0;
-      virtual bool loadElementConfig() = 0;
 
       // Generic getters and setters
       virtual bool setString(const char* key, const char* value) = 0;
@@ -93,12 +91,20 @@ namespace Supla {
       virtual bool setMqttQos(int32_t qos);
       virtual bool setMqttPoolPublicationDelay(int32_t poolDelay);
       virtual bool isMqttCommProtocolEnabled();
+      virtual bool setMqttTlsEnabled(bool enabled);
+      virtual bool isMqttTlsEnabled();
+      virtual bool setMqttAuthEnabled(bool enabled);
+      virtual bool isMqttAuthEnabled();
+      virtual bool setMqttRetainEnabled(bool enabled);
+      virtual bool isMqttRetainEnabled();
       virtual bool getMqttServer(char* result);
       virtual int32_t getMqttServerPort();
       virtual bool getMqttUser(char* result);
       virtual bool getMqttPassword(char* result);
       virtual int32_t getMqttQos();
       virtual int32_t getMqttPoolPublicationDelay();
+      virtual bool setMqttPrefix(const char* prefix);
+      virtual bool getMqttPrefix(char* result);
 
       // WiFi config
       virtual bool setWiFiSSID(const char *ssid);

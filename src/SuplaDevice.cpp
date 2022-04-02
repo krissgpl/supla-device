@@ -20,6 +20,7 @@
 #include "supla-common/log.h"
 #include "supla-common/srpc.h"
 #include "supla/channel.h"
+#include "supla/device/last_state_logger.h"
 #include "supla/element.h"
 #include "supla/io.h"
 #include "supla/network/network.h"
@@ -45,9 +46,26 @@ void SuplaDeviceClass::status(int newStatus, const char *msg, bool alwaysLog) {
     }
     currentStatus = newStatus;
     showLog = true;
+    if (lastStateLogger) {
+      lastStateLogger->log(msg);
+    }
   }
   if (alwaysLog || showLog)
     supla_log(LOG_INFO, "Current status: [%d] %s", newStatus, msg);
+}
+
+char *SuplaDeviceClass::getLastStateLog() {
+  if (lastStateLogger) {
+    return lastStateLogger->getLog();
+  }
+  return nullptr;
+}
+
+bool SuplaDeviceClass::prepareLastStateLog() {
+  if (lastStateLogger) {
+    return lastStateLogger->prepareLastStateLog();
+  }
+  return false;
 }
 
 SuplaDeviceClass::SuplaDeviceClass()
@@ -103,13 +121,22 @@ bool SuplaDeviceClass::begin(unsigned char version) {
 
   supla_log(LOG_DEBUG, "Supla - starting initialization");
 
+
   Supla::Storage::Init();
 
   if (Supla::Storage::IsConfigStorageAvailable()) {
     addFlags(SUPLA_DEVICE_FLAG_CALCFG_ENTER_CFG_MODE);
     loadDeviceConfig();
+    lastStateLogger = new Supla::Device::LastStateLogger();
+
+    // Load elements configuration
+    for (auto element = Supla::Element::begin(); element != nullptr;
+        element = element->next()) {
+      element->onLoadConfig();
+      delay(0);
+    }
   }
-//  Supla::Storage::LoadElementConfig();
+
 
   // Pefrorm dry run of write state to validate stored state section with
   // current device configuration
@@ -271,6 +298,17 @@ void SuplaDeviceClass::iterate(void) {
 
   unsigned long _millis = millis();
 
+  if (deviceRestartTimeoutTimestamp != 0 &&
+      _millis - deviceRestartTimeoutTimestamp > 5 * 60 * 1000) {
+    supla_log(LOG_INFO, "Config mode 5 min timeout. Reset device");
+    leaveConfigModeAndRestart();
+  }
+  if (forceRestartTimeMs &&
+      _millis - deviceRestartTimeoutTimestamp > forceRestartTimeMs) {
+    supla_log(LOG_INFO, "Leave cfg mode requested. Reset device");
+    leaveConfigModeAndRestart();
+  }
+
   iterateAlwaysElements(_millis);
 
   if (!isSrpcInitialized(false)) {
@@ -328,11 +366,6 @@ void SuplaDeviceClass::iterate(void) {
       }
     }
   } else {
-    if (enterCfgModeTimestamp != 0 &&
-        _millis - enterCfgModeTimestamp > 5 * 60 * 1000) {
-      supla_log(LOG_INFO, "Config mode 5 min timeout. Reset device");
-      leaveConfigMode();
-    }
   }
 }
 
@@ -676,9 +709,9 @@ void SuplaDeviceClass::enterConfigMode() {
     // if we enter cfg mode with deviceMode already set to cfgmode, then
     // configuration is incomplete, so there is no timeout to leave config
     // mode
-    enterCfgModeTimestamp = 0;
+    deviceRestartTimeoutTimestamp = 0;
   } else {
-    enterCfgModeTimestamp = millis();
+    deviceRestartTimeoutTimestamp = millis();
   }
 
   deviceMode = Supla::DEVICE_MODE_CONFIG;
@@ -688,7 +721,7 @@ void SuplaDeviceClass::enterConfigMode() {
   // TODO start local http server
 }
 
-void SuplaDeviceClass::leaveConfigMode() {
+void SuplaDeviceClass::leaveConfigModeAndRestart() {
   supla_log(LOG_INFO, "Leaving config mode");
   deviceMode = Supla::DEVICE_MODE_NORMAL;
   saveStateToStorage();
@@ -699,8 +732,8 @@ void SuplaDeviceClass::leaveConfigMode() {
   // TODO stop supla timers
 
   Supla::Network::Uninit();
-  supla_log(LOG_INFO, "Resetting in 1s...");
-  delay(1000);
+  supla_log(LOG_INFO, "Resetting in 0.5s...");
+  delay(500);
   supla_log(LOG_INFO, "See you soon!");
   deviceSoftwareReset();
 }
@@ -795,25 +828,32 @@ int SuplaDeviceClass::generateHostname(char *buf, int size) {
     }
   }
 
- uint8_t mac[6] = {};
+  uint8_t mac[6] = {};
+  name[destIdx++] = '-';
 
   if (Supla::Network::GetMacAddr(mac)) {
-    name[destIdx++] = '-';
-    const char hexMap[] = "0123456789ABCDEF";
-    for (int i = (6 - size); i < 6; i++) {
-      int high = mac[i] / 16;
-      if (high > 15) {
-        high = 15;
-      }
-      name[destIdx++] = hexMap[high];
-      name[destIdx++] = hexMap[mac[i] % 16];
-    }
+    destIdx += generateHexString(mac + (6 - size), &(name[destIdx]), (6 - size));
   }
 
   name[destIdx++] = 0;
   strncpy(buf, name, 32);
 
   return destIdx;
+}
+
+void SuplaDeviceClass::disableCfgModeTimeout() {
+  if (!forceRestartTimeMs) {
+    deviceRestartTimeoutTimestamp = 0;
+  }
+}
+
+void SuplaDeviceClass::scheduleLeaveConfigMode(int timeout) {
+  if (timeout <= 0) {
+    forceRestartTimeMs = 1;
+  } else {
+    forceRestartTimeMs = timeout;
+  }
+  deviceRestartTimeoutTimestamp = millis();
 }
 
 SuplaDeviceClass SuplaDevice;

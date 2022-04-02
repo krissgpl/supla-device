@@ -69,6 +69,39 @@ bool Config::isMqttCommProtocolEnabled() {
   return result == 1;
 }
 
+bool Config::setMqttTlsEnabled(bool enabled) {
+  int8_t value = (enabled ? 1 : 0);
+  return setInt8("mqtttls", value);
+}
+
+bool Config::isMqttTlsEnabled() {
+  int8_t result = 0;
+  getInt8("mqtttls", result);
+  return result == 1;
+}
+
+bool Config::setMqttAuthEnabled(bool enabled) {
+  int8_t value = (enabled ? 1 : 0);
+  return setInt8("mqttauth", value);
+}
+
+bool Config::isMqttAuthEnabled() {
+  int8_t result = 1;
+  getInt8("mqttauth", result);
+  return result == 1;
+}
+
+bool Config::setMqttRetainEnabled(bool enabled) {
+  int8_t value = (enabled ? 1 : 0);
+  return setInt8("mqttretain", value);
+}
+
+bool Config::isMqttRetainEnabled() {
+  int8_t result = 1;
+  getInt8("mqttretain", result);
+  return result == 1;
+}
+
 enum DeviceMode Config::getDeviceMode() {
   int32_t result = 0;
   if (getInt32("devicemode", result)) {
@@ -98,6 +131,9 @@ bool Config::getSuplaServer(char* result) {
 int32_t Config::getSuplaServerPort() {
   int32_t result = -1;
   getInt32("suplaport", result);
+  if (result <= 0 || result > 65536) {
+    result = 2016;
+  }
   return result;
 }
 
@@ -120,6 +156,9 @@ bool Config::getMqttServer(char* result) {
 int32_t Config::getMqttServerPort() {
   int32_t result = -1;
   getInt32("mqttport", result);
+  if (result <= 0 || result > 65536) {
+    result = 1883;
+  }
   return result;
 }
 
@@ -134,12 +173,18 @@ bool Config::getMqttPassword(char* result) {
 int32_t Config::getMqttQos() {
   int32_t result = -1;
   getInt32("mqttqos", result);
+  if (result < 0) {
+    result = 0;
+  }
   return result;
 }
 
 int32_t Config::getMqttPoolPublicationDelay() {
   int32_t result = -1;
   getInt32("mqttpooldelay", result);
+  if (result < 0) {
+    result = 0;
+  }
   return result;
 }
 
@@ -199,6 +244,9 @@ bool Config::setSuplaServer(const char* server) {
 }
 
 bool Config::setSuplaServerPort(int32_t port) {
+  if (port <= 0 || port > 65536) {
+    port = 2016;
+  }
   return setInt32("suplaport", port);
 }
 
@@ -219,6 +267,9 @@ bool Config::setMqttServer(const char* server) {
 }
 
 bool Config::setMqttServerPort(int32_t port) {
+  if (port <= 0 || port > 65536) {
+    port = 1883;
+  }
   return setInt32("mqttport", port);
 }
 
@@ -231,11 +282,29 @@ bool Config::setMqttPassword(const char* password) {
 }
 
 bool Config::setMqttQos(int32_t qos) {
+  if (qos < 0) {
+    qos = 0;
+  } else if (qos > 2) {
+    qos = 2;
+  }
   return setInt32("mqttqos", qos);
 }
 
 bool Config::setMqttPoolPublicationDelay(int32_t poolDelay) {
+  if (poolDelay < 0) {
+    poolDelay = 0;
+  } else if (poolDelay > 3600) {
+    poolDelay = 3600;
+  }
   return setInt32("mqttpooldelay", poolDelay);
+}
+
+bool Config::setMqttPrefix(const char* prefix) {
+  return setString("mqttprefix", prefix);
+}
+
+bool Config::getMqttPrefix(char* result) {
+  return getString("mqttprefix", result, 49);
 }
 
 void Config::commit() {
