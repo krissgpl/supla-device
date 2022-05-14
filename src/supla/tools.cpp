@@ -90,6 +90,13 @@ int generateHexString(const void *input, char *output, int inputLength, char sep
   return destIdx;
 }
 
+void hexStringToArray(const char *input, char *output, int outputLength) {
+  for (int i = 0; i < outputLength; i++) {
+    output[i] = hexStringToInt(input + 2*i, 2);
+  }
+  return;
+}
+
 uint32_t hexStringToInt(const char *str, int len) {
   uint32_t result = 0;
 
@@ -162,13 +169,40 @@ void urlDecodeInplace(char *buffer, int size) {
   *insertPtr = '\0';
 }
 
+int urlEncode(char *input, char *output, int outputMaxSize) {
+  auto parserPtr = input;
+  auto outputPtr = output;
+  auto lastOutputPtr = output + outputMaxSize - 1;
+  while (*parserPtr && outputPtr < lastOutputPtr) {
+    if ((*parserPtr >= '0' && *parserPtr <= '9')
+        || (*parserPtr >= 'A' && *parserPtr <= 'Z')
+        || (*parserPtr >= 'a' && *parserPtr <= 'z')
+        || *parserPtr == '-'
+        || *parserPtr == '_'
+        || *parserPtr == '.'
+        || *parserPtr == '~') {
+      *outputPtr++ = *parserPtr;
+    } else {
+      if (outputPtr + 3 <= lastOutputPtr) {
+        *outputPtr++ = '%';
+        outputPtr += generateHexString(parserPtr, outputPtr, 1, 0);
+      } else {
+        break;
+      }
+    }
+    parserPtr++;
+  }
+  *outputPtr = '\0';
 
-#if !defined(ARDUINO) && defined(ESP_PLATFORM)
-#include <esp_system.h>
-#endif
-
-void deviceSoftwareReset() {
-#if !defined(ARDUINO) && defined(ESP_PLATFORM)
-  esp_restart();
-#endif
+  return outputPtr - output;
 }
+
+int stringAppend(char *output, const char *input, int maxSize) {
+  int inputSize = strlen(input);
+  if (inputSize < maxSize) {
+    strcpy(output, input);
+    return inputSize;
+  }
+  return 0;
+}
+

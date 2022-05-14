@@ -25,7 +25,8 @@ enum HtmlSection {
   HTML_SECTION_FORM,
   HTML_SECTION_DEVICE_INFO,
   HTML_SECTION_NETWORK,
-  HTML_SECTION_PROTOCOL
+  HTML_SECTION_PROTOCOL,
+  HTML_SECTION_BETA_FORM
 };
 
 
@@ -45,7 +46,7 @@ class HtmlElement {
     HtmlSection section;
   protected:
     static HtmlElement *firstPtr;
-    HtmlElement *nextPtr;
+    HtmlElement *nextPtr = nullptr;
 };
 
 };

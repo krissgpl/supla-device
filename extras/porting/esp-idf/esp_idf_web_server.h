@@ -31,6 +31,7 @@ class EspIdfSender : public Supla::WebSender {
 
   protected:
     httpd_req_t* reqHandler;
+    bool error = false;
 };
 
 class EspIdfWebServer : public Supla::WebServer {
@@ -40,9 +41,11 @@ class EspIdfWebServer : public Supla::WebServer {
     virtual void start() override;
     virtual void stop() override;
 
+    bool handlePost(httpd_req_t *req);
+
     bool dataSaved = false;
   protected:
-    httpd_handle_t server;
+    httpd_handle_t server = {};
 };
 
 };

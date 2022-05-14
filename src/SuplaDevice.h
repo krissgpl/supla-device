@@ -24,6 +24,7 @@
 #include "supla/clock/clock.h"
 #include "supla/storage/config.h"
 #include "supla/device/last_state_logger.h"
+#include "supla/action_handler.h"
 
 #define ACTIVITY_TIMEOUT 30
 
@@ -57,11 +58,18 @@
 #define STATUS_UNKNOWN_ERROR             35
 
 #define STATUS_CONFIG_MODE               40
+#define STATUS_SOFTWARE_RESET            41
 #define STATUS_SW_DOWNLOAD               50
 
 typedef void (*_impl_arduino_status)(int status, const char *msg);
 
-class SuplaDeviceClass {
+namespace Supla {
+  namespace Device {
+    class SwUpdate;
+  };
+};
+
+class SuplaDeviceClass : public Supla::ActionHandler {
  public:
   SuplaDeviceClass();
   ~SuplaDeviceClass();
@@ -91,7 +99,7 @@ class SuplaDeviceClass {
   void addFlags(_supla_int_t);
   void removeFlags(_supla_int_t);
 
-  int generateHostname(char*, int size = 6);
+  int generateHostname(char*, int macSize = 6);
 
   // Timer with 100 Hz frequency (10 ms)
   void onTimer(void);
@@ -111,36 +119,58 @@ class SuplaDeviceClass {
 
   void enterConfigMode();
   void enterNormalMode();
-  // Schedules timeout to leave config mode. When provided timeout is 0
-  // then leaving config mode will be done asap.
-  void scheduleLeaveConfigMode(int timeout = 0);
-  void leaveConfigModeAndRestart();
+  // Schedules timeout to restart device. When provided timeout is 0
+  // then restart will be done asap.
+  void scheduleSoftRestart(int timeout = 0);
+  void softRestart();
   void saveStateToStorage();
   void disableCfgModeTimeout();
+  void resetToFactorySettings();
 
   int getCurrentStatus();
   void loadDeviceConfig();
   bool prepareLastStateLog();
   char *getLastStateLog();
+  void addLastStateLog(const char*);
+  void setRsaPublicKeyPtr(const uint8_t *ptr);
+  const uint8_t *getRsaPublicKey();
+
+  void handleAction(int event, int action) override;
+
+  // Enables automatic software reset of device in case of network/server
+  // connection problems longer thatn timeSec.
+  // timeSec is always round down to multiplication of 10 s.
+  // timeSec <= 60 will disable automatic restart.
+  void setAutomaticResetOnConnectionProblem(unsigned int timeSec);
 
  protected:
-  void *srpc;
-  int8_t registered;
-  int port;
-  int connectionFailCounter;
-  int networkIsNotReadyCounter;
+  void *srpc = nullptr;
+  int8_t registered = 0;
+  int port = -1;
+  unsigned int connectionFailCounter = 0;
+  unsigned int lastConnectionResetCounter = 0;
+  int networkIsNotReadyCounter = 0;
 
-  unsigned long lastIterateTime;
-  unsigned long waitForIterate;
+  unsigned long lastIterateTime = 0;
+  unsigned long waitForIterate = 0;
   unsigned long deviceRestartTimeoutTimestamp = 0;
   unsigned int forceRestartTimeMs = 0;
-  enum Supla::DeviceMode deviceMode = Supla::DEVICE_MODE_NOT_SET;
-  int currentStatus;
+  unsigned int resetOnConnectionFailCounter = 0;
 
-  _impl_arduino_status impl_arduino_status;
+  enum Supla::DeviceMode deviceMode = Supla::DEVICE_MODE_NOT_SET;
+  int currentStatus = STATUS_UNKNOWN;
+  bool goToConfigModeAsap = false;
+  bool triggerResetToFacotrySettings = false;
+  bool triggerStartLocalWebServer = false;
+  bool triggerStopLocalWebServer = false;
+  bool triggerCheckSwUpdate = false;
+  Supla::Device::SwUpdate *swUpdate = nullptr;
+  const uint8_t *rsaPublicKey = nullptr;
+
+  _impl_arduino_status impl_arduino_status = nullptr;
 
   Supla::Uptime uptime;
-  Supla::Clock *clock;
+  Supla::Clock *clock = nullptr;
   Supla::Device::LastStateLogger *lastStateLogger = nullptr;
 
   bool isSrpcInitialized(bool msg);
@@ -151,8 +181,10 @@ class SuplaDeviceClass {
   void setString(char *dst, const char *src, int max_size);
 
   void iterateAlwaysElements(unsigned long _millis);
-  bool iterateNetworkSetup(unsigned long _millis);
+  bool iterateNetworkSetup();
   bool iterateSuplaProtocol(unsigned int _millis);
+  void handleLocalActionTriggers();
+  void checkIfRestartIsNeeded(unsigned long _millis);
 
  private:
   void status(int status, const char *msg, bool alwaysLog = false);

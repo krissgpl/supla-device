@@ -42,12 +42,13 @@ int generateHexString(const void *input,
     int inputLength,
     char separator = 0);
 
+void hexStringToArray(const char *input, char *output, int outputLength);
+
 // Converts hex string value to integer
 uint32_t hexStringToInt(const char *str, int len);
 
 // Converts hex string value to integer
 uint32_t stringToUInt(const char *str, int len = -1);
-
 
 // Decode url string from buffer into buffer (inplace)
 // Replace '+' with ' '.
@@ -55,6 +56,13 @@ uint32_t stringToUInt(const char *str, int len = -1);
 // If not complete % parameter is found at the end, then it is omitted.
 void urlDecodeInplace(char *buffer, int size);
 
+// Encode url string from input to output
+// Returns number of non-null bytes added to output
+int urlEncode(char *input, char *output, int outputMaxSize);
+
+int stringAppend(char *output, const char *input, int maxSize);
+
+// This method should be implemented in platform specific cpp file
 void deviceSoftwareReset();
 
 #endif

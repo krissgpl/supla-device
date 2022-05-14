@@ -24,6 +24,7 @@
 #define MAX_SSID_SIZE          32
 #define MAX_WIFI_PASSWORD_SIZE 64
 #define MQTT_CLIENTID_MAX_SIZE 23
+#define MQTT_PASSWORD_MAX_SIZE 33
 
 namespace Supla {
 
@@ -40,6 +41,7 @@ namespace Supla {
       Config();
       virtual ~Config();
       virtual bool init() = 0;
+      virtual void removeAll() = 0;
 
       // Generic getters and setters
       virtual bool setString(const char* key, const char* value) = 0;
@@ -63,12 +65,17 @@ namespace Supla {
       virtual void commit();
 
       // Device generic config
+      virtual bool generateGuidAndAuthkey();
       virtual bool setDeviceName(const char *name);
       virtual bool setDeviceMode(enum Supla::DeviceMode mode);
       virtual bool setGUID(const char* guid);
       virtual bool getDeviceName(char *result);
       virtual enum Supla::DeviceMode getDeviceMode();
       virtual bool getGUID(char* result);
+      virtual bool getSwUpdateServer(char *url);
+      virtual bool isSwUpdateBeta();
+      virtual bool setSwUpdateServer(const char *url);
+      virtual bool setSwUpdateBeta(bool enabled);
 
       // Supla protocol config
       virtual bool setSuplaCommProtocolEnabled(bool enabled);

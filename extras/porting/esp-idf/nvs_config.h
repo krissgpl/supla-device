@@ -27,6 +27,9 @@ namespace Supla {
       NvsConfig();
       virtual ~NvsConfig();
       bool init() override;
+      void removeAll() override;
+
+      bool generateGuidAndAuthkey() override;
 
       // Generic getters and setters
       bool setString(const char* key, const char* value) override;

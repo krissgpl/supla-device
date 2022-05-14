@@ -15,9 +15,16 @@
 */
 
 #include "nvs_config.h"
+
+#ifdef SUPLA_DEVICE_ESP32
+#include <esp_random.h>
+#endif
+
 #include <nvs_flash.h>
 #include <nvs.h>
 #include <supla-common/log.h>
+#include <supla-common/proto.h>
+#include <esp_system.h>
 
 using namespace Supla;
 
@@ -40,6 +47,14 @@ bool NvsConfig::init() {
       nvs_stats.total_entries);
   ESP_ERROR_CHECK(nvs_open("supla", NVS_READWRITE, &nvsHandle));
   return true;
+}
+
+void NvsConfig::removeAll() {
+  esp_err_t err = nvs_erase_all(nvsHandle);
+  if (err != ESP_OK) {
+    supla_log(LOG_ERR, "Failed to erase NVS storage (%d)", err);
+  }
+  nvs_commit(nvsHandle);
 }
 
 // Generic getters and setters
@@ -117,3 +132,15 @@ void NvsConfig::commit() {
   nvs_commit(nvsHandle);
 }
 
+bool NvsConfig::generateGuidAndAuthkey() {
+  char guid[SUPLA_GUID_SIZE];
+  char authkey[SUPLA_AUTHKEY_SIZE];
+
+  esp_fill_random(guid, SUPLA_GUID_SIZE);
+  esp_fill_random(authkey, SUPLA_AUTHKEY_SIZE);
+
+  setGUID(guid);
+  setAuthKey(authkey);
+  commit();
+  return true;
+}

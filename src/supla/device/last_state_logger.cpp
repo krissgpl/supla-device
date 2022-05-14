@@ -16,9 +16,16 @@
 
 #include "last_state_logger.h"
 #include <string.h>
+#include <supla-common/log.h>
+#include <supla/mutex.h>
+#include <supla/auto_lock.h>
 
 namespace Supla {
   namespace Device {
+
+    LastStateLogger::LastStateLogger() {
+      mutex = Supla::Mutex::Create();
+    }
 
     bool LastStateLogger::prepareLastStateLog() {
       index = 0;
@@ -32,6 +39,7 @@ namespace Supla {
         return;
       }
 
+      Supla::AutoLock autoLock(mutex);
       char copy[LAST_STATE_LOGGER_BUFFER_SIZE];
       memcpy(copy, buffer, LAST_STATE_LOGGER_BUFFER_SIZE);
       memcpy(buffer, state, newStateSize);
@@ -43,10 +51,15 @@ namespace Supla {
       buffer[LAST_STATE_LOGGER_BUFFER_SIZE - 3] = '.';
       buffer[LAST_STATE_LOGGER_BUFFER_SIZE - 2] = '.';
       buffer[LAST_STATE_LOGGER_BUFFER_SIZE - 1] = '\0';
+
+      supla_log(LOG_INFO, "LAST STATE ADDED: %s", buffer);
     }
 
     char *LastStateLogger::getLog() {
       if (buffer[index]) {
+        if (index == 0) {
+          mutex->lock();
+        }
         if (index < LAST_STATE_LOGGER_BUFFER_SIZE) {
           char *ptr = buffer + index;
           int logSize = strlen(buffer + index);
@@ -54,6 +67,7 @@ namespace Supla {
           return ptr;
         }
       }
+      mutex->unlock();
       return nullptr;
     }
 

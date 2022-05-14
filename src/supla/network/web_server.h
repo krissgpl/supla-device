@@ -22,7 +22,7 @@
 class SuplaDeviceClass;
 
 #define HTML_KEY_LENGTH 16
-#define HTML_VAL_LENGTH 50
+#define HTML_VAL_LENGTH 500
 
 namespace Supla {
 
@@ -30,6 +30,7 @@ extern const unsigned char favico[1150];
 
 class WebServer {
   public:
+    static WebServer *Instance();
     WebServer(Supla::HtmlGenerator *);
     virtual ~WebServer();
     virtual void start() = 0;
@@ -43,6 +44,7 @@ class WebServer {
 
     Supla::HtmlGenerator *htmlGenerator = nullptr;
   protected:
+    static WebServer *webServerInstance;
     bool destroyGenerator = false;
     SuplaDeviceClass *sdc = nullptr;
     bool keyFound = false;

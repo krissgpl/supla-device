@@ -17,12 +17,16 @@
 #ifndef _supla_last_state_logger_h_
 #define _supla_last_state_logger_h_
 
-#define LAST_STATE_LOGGER_BUFFER_SIZE 200
+#define LAST_STATE_LOGGER_BUFFER_SIZE 500
+
 
 namespace Supla {
+  class Mutex;
+
   namespace Device {
     class LastStateLogger {
       public:
+        LastStateLogger();
         virtual void log(const char *);
         virtual char *getLog();
         virtual bool prepareLastStateLog();
@@ -30,6 +34,7 @@ namespace Supla {
       protected:
         char buffer[LAST_STATE_LOGGER_BUFFER_SIZE] = {};
         int index = 0;
+        Supla::Mutex *mutex = nullptr;
     };
   };  // namespace Device
 };  // namespace Supla

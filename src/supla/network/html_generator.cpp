@@ -22,9 +22,9 @@
 #include <SuplaDevice.h>
 
 const char headerBegin[] =
-  "<html lang=en><meta content=\"text/html; charset=UTF-8\"http-equiv=content-t"
-  "ype><meta content=\"width=device-width,initial-scale=1,maximum-scale=1,user-"
-  "scalable=no\"name=viewport><title>Configuration Page</title>";
+"<!doctype html><html lang=en><meta content=\"text/html;charset=UTF-8\"http-equ"
+"iv=content-type><meta content=\"width=device-width,initial-scale=1,maximum-sca"
+"le=1,user-scalable=no\"name=viewport><title>Configuration Page</title>";
 
 
 const char styles[] =
@@ -120,6 +120,21 @@ void Supla::HtmlGenerator::sendPage(Supla::WebSender *sender, bool dataSaved) {
   sendBodyEnd(sender);
 }
 
+void Supla::HtmlGenerator::sendBetaPage(Supla::WebSender *sender,
+    bool dataSaved) {
+  sendHeaderBegin(sender);
+  sendHeader(sender);
+  sendHeaderEnd(sender);
+  sendBodyBegin(sender);
+  if (dataSaved) {
+    sendDataSaved(sender);
+  }
+  sendLogo(sender);
+  sendDeviceInfo(sender);
+  sendBetaForm(sender);
+  sendBodyEnd(sender);
+}
+
 void Supla::HtmlGenerator::sendHeaderBegin(Supla::WebSender *sender) {
   sender->send(headerBegin, strlen(headerBegin));
 }
@@ -185,9 +200,33 @@ void Supla::HtmlGenerator::sendForm(Supla::WebSender *sender) {
   }
   sender->send("</div>");
 
+  sendSubmitButton(sender);
+  sender->send("</form>");
+}
+
+void Supla::HtmlGenerator::sendBetaForm(Supla::WebSender *sender) {
+  sender->send("<form id=\"cfgform\" method=\"post\">");
+
+  sender->send(
+      "<div class=\"w\">"
+      "<h3>Additional Settings</h3>"
+      );
+  for (auto htmlElement = Supla::HtmlElement::begin(); htmlElement;
+      htmlElement = htmlElement->next()) {
+    if (htmlElement->section == HTML_SECTION_BETA_FORM) {
+      htmlElement->send(sender);
+    }
+  }
+  sender->send("</div>");
+
+  sendSubmitButton(sender);
+  sender->send("</form>");
+}
+
+void Supla::HtmlGenerator::sendSubmitButton(Supla::WebSender* sender) {
   sender->send("<button type=\"submit\">SAVE</button><br><br><button type=\"but"
       "ton\" onclick=\"saveAndReboot();\">SAVE &amp; RESTART</button><input typ"
-      "e=\"hidden\" name=\"rbt\" value=\"0\" /></form>");
+      "e=\"hidden\" name=\"rbt\" value=\"0\" />");
 }
 
 void Supla::HtmlGenerator::sendBodyEnd(Supla::WebSender *sender) {

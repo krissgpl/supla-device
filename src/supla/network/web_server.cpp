@@ -24,6 +24,8 @@
 #include <supla/tools.h>
 #include <supla/network/html_element.h>
 
+Supla::WebServer *Supla::WebServer::webServerInstance = nullptr;
+
 const unsigned char Supla::favico[] = {
   0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10, 0x00, 0x00, 0x01, 0x00,
   0x20, 0x00, 0x68, 0x04, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x28, 0x00,
@@ -122,7 +124,12 @@ const unsigned char Supla::favico[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
+Supla::WebServer *Supla::WebServer::Instance() {
+  return webServerInstance;
+}
+
 Supla::WebServer::WebServer(Supla::HtmlGenerator *generator) {
+  webServerInstance = this;
   if (generator) {
     htmlGenerator = generator;
   } else {
@@ -132,6 +139,7 @@ Supla::WebServer::WebServer(Supla::HtmlGenerator *generator) {
 }
 
 Supla::WebServer::~WebServer() {
+  webServerInstance = nullptr;
   if (destroyGenerator) {
     delete htmlGenerator;
   }
@@ -196,9 +204,9 @@ void Supla::WebServer::parsePost(const char* postContent,
           int reboot = stringToUInt(value);
           supla_log(LOG_DEBUG, "rbt found %d", reboot);
           if (reboot == 2) {
-            sdc->scheduleLeaveConfigMode(2500);
+            sdc->scheduleSoftRestart(2500);
           } else if (reboot) {
-            sdc->scheduleLeaveConfigMode();
+            sdc->scheduleSoftRestart();
           }
         }
         partialSize = 0;

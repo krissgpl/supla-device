@@ -23,6 +23,8 @@
 #include "supla-common/proto.h"
 #include "supla/storage/config.h"
 
+class SuplaDeviceClass;
+
 namespace Supla {
 class Network {
  public:
@@ -66,6 +68,7 @@ class Network {
   virtual void fillStateData(TDSC_ChannelState &channelState);
 
   // WiFi specific part
+  virtual bool isWifiConfigRequired();
   virtual void setSsid(const char *wifiSsid);
   virtual void setPassword(const char *wifiPassword);
 
@@ -73,6 +76,7 @@ class Network {
   void updateLastResponse();
   void clearTimeCounters();
   void setActivityTimeout(_supla_int_t activityTimeoutSec);
+  void setSuplaDeviceClass(SuplaDeviceClass *);
 
  protected:
   static Network *netIntf;
@@ -81,6 +85,7 @@ class Network {
   _supla_int64_t lastPingTimeMs;
   _supla_int_t serverActivityTimeoutS;
   void *srpc;
+  SuplaDeviceClass *sdc = nullptr;
 
   enum DeviceMode mode = DEVICE_MODE_NORMAL;
   bool modeChanged = false;

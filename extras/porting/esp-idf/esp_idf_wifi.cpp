@@ -15,15 +15,29 @@
    */
 
 #include <esp_netif.h>
+
+#ifdef SUPLA_DEVICE_ESP32
+#include <esp_mac.h>
+#endif
+
 #include <fcntl.h>
 #include <supla/supla_lib_config.h>
 #include <nvs_flash.h>
 #include <supla/storage/storage.h>
 #include <supla/storage/config.h>
+#include <SuplaDevice.h>
+#include <supla/mutex.h>
+#include <supla/auto_lock.h>
 
 #include <cstring>
 
 #include "esp_idf_wifi.h"
+
+#ifndef SUPLA_DEVICE_ESP32
+// delete name variant is deprecated in ESP-IDF, however ESP8266 RTOS still
+// use it.
+#define esp_tls_conn_destroy esp_tls_conn_delete
+#endif
 
 static Supla::EspIdfWifi *netIntfPtr = nullptr;
 
@@ -36,6 +50,7 @@ Supla::EspIdfWifi::EspIdfWifi(const char *wifiSsid,
     unsigned char *ip)
   : Wifi(wifiSsid, wifiPassword, ip) {
     netIntfPtr = this;
+    mutex = Supla::Mutex::Create();
   }
 
 Supla::EspIdfWifi::~EspIdfWifi() {
@@ -43,6 +58,7 @@ Supla::EspIdfWifi::~EspIdfWifi() {
 }
 
 int Supla::EspIdfWifi::read(void *buf, int count) {
+  Supla::AutoLock autoLock(mutex);
   if (client == nullptr) {
     return 0;
   }
@@ -50,13 +66,19 @@ int Supla::EspIdfWifi::read(void *buf, int count) {
   esp_tls_conn_read(client, nullptr, 0);
   int tlsErr = 0;
   esp_tls_get_and_clear_last_error(client->error_handle, &tlsErr, nullptr);
+  autoLock.unlock();
   if (tlsErr != 0 && -tlsErr != ESP_TLS_ERR_SSL_WANT_READ &&
       -tlsErr != ESP_TLS_ERR_SSL_WANT_WRITE) {
     supla_log(LOG_ERR, "Connection error %d", tlsErr);
     Disconnect();
     return 0;
   }
+  autoLock.lock();
+  if (client == nullptr) {
+    return 0;
+  }
   _supla_int_t size = esp_tls_get_bytes_avail(client);
+  autoLock.unlock();
   if (size < 0) {
     supla_log(LOG_ERR, "error in esp tls get bytes avail %d", size);
     Disconnect();
@@ -65,7 +87,13 @@ int Supla::EspIdfWifi::read(void *buf, int count) {
   if (size > 0) {
     int ret = 0;
     do {
+      autoLock.lock();
+      if (client == nullptr) {
+        return 0;
+      }
       ret = esp_tls_conn_read(client, buf, count);
+      autoLock.unlock();
+
       if (ret == ESP_TLS_ERR_SSL_WANT_READ ||
           ret == ESP_TLS_ERR_SSL_WANT_WRITE) {
         vTaskDelay(1);
@@ -94,6 +122,7 @@ int Supla::EspIdfWifi::read(void *buf, int count) {
 }
 
 int Supla::EspIdfWifi::write(void *buf, int count) {
+  Supla::AutoLock autoLock(mutex);
   if (client == nullptr) {
     return 0;
   }
@@ -108,6 +137,7 @@ int Supla::EspIdfWifi::write(void *buf, int count) {
 }
 
 int Supla::EspIdfWifi::connect(const char *server, int port) {
+  Supla::AutoLock autoLock(mutex);
   if (client != nullptr) {
     supla_log(LOG_ERR, "client ptr should be null when trying to connect");
     return 0;
@@ -133,7 +163,6 @@ int Supla::EspIdfWifi::connect(const char *server, int port) {
   client = esp_tls_init();
   int result = esp_tls_conn_new_sync(
       server, strlen(server), connectionPort, &cfg, client);
-
   if (result == 1) {
     isServerConnected = true;
     int socketFd = 0;
@@ -142,7 +171,13 @@ int Supla::EspIdfWifi::connect(const char *server, int port) {
     }
 
   } else {
-   disconnect();
+    supla_log(LOG_DEBUG, "last errors %d %d %d", client->error_handle->last_error,
+        client->error_handle->esp_tls_error_code, client->error_handle->esp_tls_flags);
+    logConnReason(client->error_handle->last_error,
+        client->error_handle->esp_tls_error_code,
+        client->error_handle->esp_tls_flags);
+    autoLock.unlock();
+    disconnect();
   }
 
   // SuplaDevice expects 1 on success, which is the same
@@ -155,9 +190,10 @@ bool Supla::EspIdfWifi::connected() {
 }
 
 void Supla::EspIdfWifi::disconnect() {
+  Supla::AutoLock autoLock(mutex);
   isServerConnected = false;
   if (client != nullptr) {
-    esp_tls_conn_delete(client);
+    esp_tls_conn_destroy(client);
     client = nullptr;
   }
 }
@@ -185,12 +221,17 @@ static void eventHandler(void *arg,
         break;
       }
       case WIFI_EVENT_STA_DISCONNECTED: {
+        wifi_event_sta_disconnected_t *data = (wifi_event_sta_disconnected_t*)(eventData);
         if (netIntfPtr) {
+          netIntfPtr->setIpReady(false);
           netIntfPtr->setWifiConnected(false);
+          netIntfPtr->logWifiReason(data->reason);
+          netIntfPtr->disconnect();
         }
         if (!netIntfPtr->isInConfigMode()) {
           esp_wifi_connect();
-          supla_log(LOG_DEBUG, "connect to the AP fail. Trying again");
+          supla_log(LOG_DEBUG, "connect to the AP fail (reason %d). Trying again",
+              data->reason);
         }
         break;
       }
@@ -230,7 +271,9 @@ void Supla::EspIdfWifi::setup() {
 
 #ifdef SUPLA_DEVICE_ESP32
     apNetIf = esp_netif_create_default_wifi_ap();
+    esp_netif_set_hostname(apNetIf, hostname);
     staNetIf = esp_netif_create_default_wifi_sta();
+    esp_netif_set_hostname(staNetIf, hostname);
 #endif /*SUPLA_DEVICE_ESP32*/
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -243,6 +286,8 @@ void Supla::EspIdfWifi::setup() {
     ESP_ERROR_CHECK(esp_event_handler_register(
           IP_EVENT, IP_EVENT_STA_LOST_IP, &eventHandler, NULL));
     esp_wifi_set_ps(WIFI_PS_NONE);
+
+
   } else {
     supla_log(LOG_DEBUG, "WiFi: resetting WiFi connection");
     disconnect();
@@ -262,7 +307,7 @@ void Supla::EspIdfWifi::setup() {
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
   } else {
-    supla_log(LOG_INFO, "WiFi: establishing connection with SSID: \"%s\"", ssid);
+    supla_log(LOG_INFO, "Wi-Fi: establishing connection with SSID: \"%s\"", ssid);
     wifi_config_t wifi_config = {};
     memcpy(wifi_config.sta.ssid, ssid, MAX_SSID_SIZE);
     memcpy(wifi_config.sta.password, password, MAX_WIFI_PASSWORD_SIZE);
@@ -278,6 +323,12 @@ void Supla::EspIdfWifi::setup() {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   }
   ESP_ERROR_CHECK(esp_wifi_start());
+
+#ifndef SUPLA_DEVICE_ESP32
+  // ESP8266 hostname settings have to be done after esp_wifi_start
+  tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, hostname);
+  tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_AP, hostname);
+#endif
 }
 
 void Supla::EspIdfWifi::uninit() {
@@ -285,16 +336,19 @@ void Supla::EspIdfWifi::uninit() {
   setIpReady(false);
   disconnect();
   if (initDone) {
-    supla_log(LOG_DEBUG, "WiFi: stopping WiFi connection");
+    supla_log(LOG_DEBUG, "Wi-Fi: stopping WiFi connection");
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, eventHandler);
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_LOST_IP, eventHandler);
     esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, eventHandler);
+    esp_wifi_stop();
 #ifdef SUPLA_DEVICE_ESP32
     if (apNetIf) {
-      esp_netif_destroy(apNetIf);
+      esp_netif_destroy_default_wifi(apNetIf);
+      apNetIf = nullptr;
     }
     if (staNetIf) {
-      esp_netif_destroy(staNetIf);
+      esp_netif_destroy_default_wifi(staNetIf);
+      staNetIf = nullptr;
     }
 #endif
 
@@ -303,7 +357,6 @@ void Supla::EspIdfWifi::uninit() {
     esp_wifi_deauth_sta(0);
     esp_wifi_disconnect();
 
-    esp_wifi_stop();
     esp_wifi_deinit();
 
     vEventGroupDelete(wifiEventGroup);
@@ -364,3 +417,134 @@ bool Supla::EspIdfWifi::getMacAddr(uint8_t *out) {
   esp_read_mac(out, ESP_MAC_WIFI_STA);
   return true;
 }
+
+void Supla::EspIdfWifi::logWifiReason(int reason) {
+  bool reasonAlreadyReported = false;
+  for (int i = 0; i < sizeof(lastReasons); i++) {
+    if (lastReasons[i] == reason) {
+      reasonAlreadyReported = true;
+      break;
+    }
+  }
+  lastReasons[lastReasonIdx++] = reason;
+  if (lastReasonIdx >= sizeof(lastReasons)) {
+    lastReasonIdx = 0;
+  }
+
+  if (!reasonAlreadyReported && sdc) {
+    switch (reason) {
+      case 1: {
+        sdc->addLastStateLog("Wi-Fi: disconnect (unspecified)");
+        break;
+      }
+      case 2: {
+        sdc->addLastStateLog("Wi-Fi: auth expire (incorrect password)");
+        break;
+      }
+      case 3: {
+        sdc->addLastStateLog("Wi-Fi: auth leave");
+        break;
+      }
+      case 8: {
+        sdc->addLastStateLog("Wi-Fi: disconnecting from AP");
+        break;
+      }
+      case 15: {
+        sdc->addLastStateLog("Wi-Fi: 4way handshake timeout (incorrect password)");
+        break;
+      }
+      case 200: {
+        sdc->addLastStateLog("Wi-Fi: beacon timeout");
+        break;
+      }
+      case 201: {
+        char buf[100] = {};
+        snprintf(buf, 100, "Wi-Fi: \"%s\" not found", ssid);
+        sdc->addLastStateLog(buf);
+        break;
+      }
+      case 202: {
+        sdc->addLastStateLog("Wi-Fi: auth fail");
+        break;
+      }
+      case 203: {
+        sdc->addLastStateLog("Wi-Fi: assoc fail");
+        break;
+      }
+      case 204: {
+        sdc->addLastStateLog("Wi-Fi: handshake timeout (incorrect password)");
+        break;
+      }
+      case 205: {
+        sdc->addLastStateLog("Wi-Fi: connection fail");
+        break;
+      }
+      case 206: {
+        sdc->addLastStateLog("Wi-Fi: ap tsf reset");
+        break;
+      }
+      case 207: {
+        sdc->addLastStateLog("Wi-Fi: roaming");
+        break;
+      }
+      default: {
+        char buf[100] = {};
+        snprintf(buf, 100, "Wi-Fi: disconnect reason %d", reason);
+        sdc->addLastStateLog(buf);
+        break;
+      }
+
+
+    };
+  }
+}
+
+void Supla::EspIdfWifi::logConnReason(int error, int tlsError, int tlsFlags) {
+  if (sdc && (lastConnErr != error || lastTlsErr != tlsError)) {
+    lastConnErr = error;
+    lastTlsErr = tlsError;
+    switch (error) {
+      case ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME: {
+        sdc->addLastStateLog("Connection: can't resolve hostname");
+        break;
+      }
+      case ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST: {
+        sdc->addLastStateLog("Connection: failed connect to host");
+        break;
+      }
+      case ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT: {
+        sdc->addLastStateLog("Connection: connection timeout");
+        break;
+      }
+      case ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED: {
+        switch (tlsError) {
+          case -MBEDTLS_ERR_X509_CERT_VERIFY_FAILED: {
+            sdc->addLastStateLog("Connection TLS: handshake fail - server "
+                "certificate verification error"
+                );
+            break;
+          }
+          default: {
+            char buf[100] = {};
+            snprintf(buf, 100, "Connection TLS: handshake fail (TLS 0x%X "
+                "flags 0x%x)",
+                tlsError, tlsFlags);
+            sdc->addLastStateLog(buf);
+            break;
+          }
+
+        };
+        break;
+      }
+      default: {
+        char buf[100] = {};
+        snprintf(buf, 100, "Connection: error 0x%X (TLS 0x%X flags 0x%x)",
+            error, tlsError, tlsFlags);
+        sdc->addLastStateLog(buf);
+        break;
+      }
+    };
+  }
+}
+
+
