@@ -5,38 +5,37 @@
  modify it under the terms of the GNU General Public License
  as published by the Free Software Foundation; either version 2
  of the License, or (at your option) any later version.
+
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
+
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#include <gtest/gtest.h>
+#ifndef _supla_sensor_virtual_thermometer_h_
+#define _supla_sensor_virtual_thermometer_h_
 
-#include <supla/condition.h>
+#include "thermometer.h"
 
-TEST(OnBetweenTests, OnBetweenConditionTests) {
-  auto cond = OnBetween(20, 30);
+namespace Supla {
+  namespace Sensor {
+    class VirtualThermometer : public Supla::Sensor::Thermometer {
+      public:
+        double getValue() override {
+          return temperature;
+        }
+        void setValue(double val) {
+          temperature = val;
+        }
 
-  EXPECT_FALSE(cond->checkConditionFor(5));
-  EXPECT_FALSE(cond->checkConditionFor(15));
+      protected:
+        double temperature = TEMPERATURE_NOT_AVAILABLE;
+    };
+  };  // namespace Sensor
+};  // namespace Supla
 
-  EXPECT_FALSE(cond->checkConditionFor(20));
-  EXPECT_TRUE(cond->checkConditionFor(20.001));
-  EXPECT_FALSE(cond->checkConditionFor(25));
-
-  EXPECT_FALSE(cond->checkConditionFor(5));
-  EXPECT_FALSE(cond->checkConditionFor(5));
-  EXPECT_FALSE(cond->checkConditionFor(5));
-
-  EXPECT_FALSE(cond->checkConditionFor(50));
-  EXPECT_TRUE(cond->checkConditionFor(29));
-  EXPECT_FALSE(cond->checkConditionFor(5));
-
-  delete cond;
-}
-
-
+#endif /* _supla_sensor_virtual_thermometer_h_ */

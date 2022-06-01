@@ -14,29 +14,23 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#include <gtest/gtest.h>
+#ifndef __SUPLA_LINUX_FILE_STATE_LOGGER_H_
+#define __SUPLA_LINUX_FILE_STATE_LOGGER_H_
 
-#include <supla/condition.h>
+#include <supla/device/last_state_logger.h>
+#include <string>
 
-TEST(OnBetweenTests, OnBetweenConditionTests) {
-  auto cond = OnBetween(20, 30);
+namespace Supla {
+  namespace Device {
+    class FileStateLogger : public LastStateLogger {
+      public:
+        FileStateLogger(const std::string&);
+        virtual void log(const char *) override;
+        void addToFile(const char *line);
+      protected:
+        std::string file;
+    };
+  };
+};
 
-  EXPECT_FALSE(cond->checkConditionFor(5));
-  EXPECT_FALSE(cond->checkConditionFor(15));
-
-  EXPECT_FALSE(cond->checkConditionFor(20));
-  EXPECT_TRUE(cond->checkConditionFor(20.001));
-  EXPECT_FALSE(cond->checkConditionFor(25));
-
-  EXPECT_FALSE(cond->checkConditionFor(5));
-  EXPECT_FALSE(cond->checkConditionFor(5));
-  EXPECT_FALSE(cond->checkConditionFor(5));
-
-  EXPECT_FALSE(cond->checkConditionFor(50));
-  EXPECT_TRUE(cond->checkConditionFor(29));
-  EXPECT_FALSE(cond->checkConditionFor(5));
-
-  delete cond;
-}
-
-
+#endif /* __SUPLA_LINUX_FILE_STATE_LOGGER_H_ */

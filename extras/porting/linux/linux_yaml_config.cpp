@@ -36,11 +36,19 @@
 
 #include <cstring>
 #include <string>
+#include <chrono>
+#include <random>
+#include <fstream>
+#include <filesystem>
 
 #include "linux_yaml_config.h"
 
 namespace Supla {
   const char Multiplier[] = "multiplier";
+
+  const char GuidAuthFileName[] = "/guid_auth.yaml";
+  const char GuidKey[] = "guid";
+  const char AuthKeyKey[] = "authkey";
 };
 
 Supla::LinuxYamlConfig::LinuxYamlConfig(const std::string& file) : file(file) {
@@ -53,6 +61,7 @@ bool Supla::LinuxYamlConfig::init() {
   if (config.size() == 0) {
     try {
       config = YAML::LoadFile(file);
+      loadGuidAuthFromPath(getStateFilesPath());
     } catch (const YAML::Exception& ex) {
       supla_log(LOG_ERR, "Config file YAML error: %s", ex.what());
       return false;
@@ -89,62 +98,40 @@ bool Supla::LinuxYamlConfig::isVerbose() {
   return false;
 }
 
-bool Supla::LinuxYamlConfig::isDaemon() {
-  try {
-    if (config["daemon"]) {
-      auto daemon = config["daemon"].as<bool>();
-      return daemon;
-    }
-  } catch (const YAML::Exception& ex) {
-    supla_log(LOG_ERR, "Config file YAML error: %s", ex.what());
-  }
-  return false;
-}
-
 void Supla::LinuxYamlConfig::removeAll() {
 }
 
 bool Supla::LinuxYamlConfig::generateGuidAndAuthkey() {
-  char guid[SUPLA_GUID_SIZE] = {0x00,
-    0x10,
-    0x10,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00};
+  char guid[SUPLA_GUID_SIZE] = {};
+  char authkey[SUPLA_AUTHKEY_SIZE] = {};
 
-  char authkey[SUPLA_AUTHKEY_SIZE] = {0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x10,
-    0x10,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x00};
+  unsigned int randSeed = static_cast<unsigned int>(
+      std::chrono::system_clock::now().time_since_epoch().count());
 
-  // TODO random generate
+  std::mt19937 randGen(randSeed);
+  std::uniform_int_distribution<unsigned char> distribution(0, 255);
+
+  for (int i = 0; i < SUPLA_GUID_SIZE; i++) {
+    guid[i] = static_cast<char>(distribution(randGen));
+  }
+
+  for (int i = 0; i < SUPLA_AUTHKEY_SIZE; i++) {
+    authkey[i] = distribution(randGen);
+  }
+
+  if (isArrayEmpty(guid, SUPLA_GUID_SIZE)) {
+    supla_log(LOG_ERR, "Failed to generate GUID");
+    return false;
+  }
+  if (isArrayEmpty(authkey, SUPLA_AUTHKEY_SIZE)) {
+    supla_log(LOG_ERR, "Failed to generate AUTHKEY");
+    return false;
+  }
 
   setGUID(guid);
   setAuthKey(authkey);
-  commit();
-  return true;
+
+  return saveGuidAuth(getStateFilesPath());
 }
 
 // Generic getters and setters
@@ -672,6 +659,10 @@ Supla::Parser::Parser* Supla::LinuxYamlConfig::addParser(
       supla_log(LOG_ERR, "Config: unknown parser type \"%s\"", type.c_str());
       return nullptr;
     }
+    if (parser["refresh_time_ms"]) {
+      int timeMs = parser["refresh_time_ms"].as<int>();
+      prs->setRefreshTime(timeMs);
+    }
   } else {
     supla_log(LOG_ERR, "Config: type not defined for parser");
     return nullptr;
@@ -735,4 +726,76 @@ Supla::Source::Source* Supla::LinuxYamlConfig::addSource(
   sourceCount++;
 
   return src;
+}
+
+std::string Supla::LinuxYamlConfig::getStateFilesPath() {
+  std::string path;
+  try {
+    if (config["state_files_path"]) {
+      path = config["state_files_path"].as<std::string>();
+    }
+  } catch (const YAML::Exception& ex) {
+    supla_log(LOG_ERR, "Config file YAML error: %s", ex.what());
+  }
+  if (path.empty()) {
+    supla_log(LOG_DEBUG, "Config: missing state files path - using default");
+    path = "var/lib/supla-device";
+  }
+  return path;
+}
+
+void Supla::LinuxYamlConfig::loadGuidAuthFromPath(const std::string & path) {
+  try {
+    std::string file = path + Supla::GuidAuthFileName;
+    supla_log(LOG_INFO, "GUID and AUTHKEY: loading from file %s", file.c_str());
+    auto guidAuthYaml = YAML::LoadFile(file);
+    std::string guidHex;
+    std::string authHex;
+    if (guidAuthYaml[Supla::GuidKey]) {
+      guidHex = guidAuthYaml[Supla::GuidKey].as<std::string>();
+      if (guidHex.length() != SUPLA_GUID_HEXSIZE - 1) {
+        supla_log(LOG_WARNING, "GUID: invalid guid value length");
+        guidHex = "";
+      }
+      guid = guidHex;
+    } else {
+      supla_log(LOG_WARNING, "GUID: missing guid key in yaml file");
+    }
+    if (guidAuthYaml[Supla::AuthKeyKey]) {
+      authHex = guidAuthYaml[Supla::AuthKeyKey].as<std::string>();
+      if (authHex.length() != SUPLA_AUTHKEY_HEXSIZE - 1) {
+        supla_log(LOG_WARNING, "AUTHKEY: invalid authkey value length");
+        authHex = "";
+      }
+      authkey = authHex;
+    } else {
+      supla_log(LOG_WARNING, "AUTHKEY: missing authkey key in yaml file");
+    }
+
+  } catch (const YAML::Exception& ex) {
+    supla_log(LOG_ERR, "Guid/auth file YAML error: %s", ex.what());
+  }
+}
+
+bool Supla::LinuxYamlConfig::saveGuidAuth(const std::string& path) {
+  if (!std::filesystem::exists(path)) {
+    std::error_code err;
+    if (!std::filesystem::create_directories(path, err)) {
+      supla_log(LOG_WARNING, "Config: failed to create folder for state files");
+      return false;
+    }
+  }
+  YAML::Node outputYaml;
+  outputYaml[Supla::GuidKey] = guid;
+  outputYaml[Supla::AuthKeyKey] = authkey;
+
+  std::ofstream out(path + Supla::GuidAuthFileName);
+  out << outputYaml;
+  out.close();
+  if (out.fail()) {
+    supla_log(LOG_ERR, "Config: failed to write guid/authkey to file");
+    return false;
+  }
+
+  return true;
 }
