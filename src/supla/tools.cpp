@@ -17,7 +17,8 @@
  */
 
 #include "tools.h"
-#include "string.h"
+#include <string.h>
+#include <supla-common/proto.h>
 
 void float2DoublePacked(float number, uint8_t *bar, int byteOrder) {
   (void)(byteOrder);
@@ -56,8 +57,12 @@ float doublePacked2float(uint8_t *bar) {
   return fl.f;
 }
 
-long adjustRange(long input, long inMin, long inMax, long outMin, long outMax) {
-  long result = (input - inMin) * (outMax - outMin) / (inMax - inMin);
+int64_t adjustRange(int64_t input,
+    int64_t inMin,
+    int64_t inMax,
+    int64_t outMin,
+    int64_t outMax) {
+  int64_t result = (input - inMin) * (outMax - outMin) / (inMax - inMin);
   return result + outMin;
 }
 
@@ -71,7 +76,10 @@ bool isArrayEmpty(void* array, size_t arraySize) {
   return true;
 }
 
-int generateHexString(const void *input, char *output, int inputLength, char separator) {
+int generateHexString(const void *input,
+    char *output,
+    int inputLength,
+    char separator) {
   const char hexMap[] = "0123456789ABCDEF";
   int destIdx = 0;
 
@@ -118,7 +126,7 @@ uint32_t hexStringToInt(const char *str, int len) {
   }
 
   return result;
-};
+}
 
 uint32_t stringToUInt(const char *str, int len) {
   if (len == -1) {
@@ -141,6 +149,36 @@ uint32_t stringToUInt(const char *str, int len) {
   return result;
 }
 
+int32_t stringToInt(const char *str, int len) {
+  if (len == -1) {
+    len = strlen(str);
+  }
+
+  int32_t result = 0;
+  bool minusFound = false;
+
+  for (int i = 0; i < len; i++) {
+    if (str[i] == '-') {
+      if (i == 0) {
+        minusFound = true;
+        continue;
+      } else {
+        return 0;
+      }
+    }
+    if (str[i] < '0' || str[i] > '9') {
+      return 0;
+    }
+    if (i) {
+      result *= 10;
+    }
+
+    result += static_cast<uint8_t>(str[i]-'0');
+  }
+
+  return minusFound ? -result : result;
+}
+
 void urlDecodeInplace(char *buffer, int size) {
   auto insertPtr = buffer;
   auto parserPtr = buffer;
@@ -149,11 +187,11 @@ void urlDecodeInplace(char *buffer, int size) {
     if (*parserPtr == '+') {
       *insertPtr = ' ';
     } else if (*parserPtr == '%') {
-      parserPtr++; // skip '%'
+      parserPtr++;  // skip '%'
       if (parserPtr + 1 < endPtr) {
         *insertPtr = static_cast<char>(hexStringToInt(parserPtr, 2));
-        parserPtr++; // there are 2 bytes, so we shift one here
-        // decode %HEX
+        parserPtr++;  // there are 2 bytes, so we shift one here
+                      // decode %HEX
       } else {
         *insertPtr = '\0';
         parserPtr = endPtr;
@@ -200,9 +238,123 @@ int urlEncode(char *input, char *output, int outputMaxSize) {
 int stringAppend(char *output, const char *input, int maxSize) {
   int inputSize = strlen(input);
   if (inputSize < maxSize) {
-    strcpy(output, input);
+    strncpy(output, input, inputSize);
     return inputSize;
   }
   return 0;
 }
 
+int strncmpInsensitive(const char *s1, const char *s2, int size) {
+  if (s1 == s2) {
+    return 0;
+  }
+  if (s1 == nullptr) {
+    return -1;
+  }
+  if (s2 == nullptr) {
+    return 1;
+  }
+
+  for (int i = 0; i < size; i++) {
+    char c1 = s1[i];
+    char c2 = s2[i];
+
+    if (c1 >= 97 && c1 <= 122) {
+      c1 -= 32;
+    }
+
+    if (c2 >= 97 && c2 <= 122) {
+      c2 -= 32;
+    }
+
+    if (c1 < c2) {
+      return -1;
+    }
+
+    if (c1 > c2) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+// Converts float with the precision specified by decLimit to int multiplied by
+// 10 raised to the power of decLimit, so if decLimit == 2 then "3.1415" -> 314
+int32_t floatStringToInt(const char *str, int precision) {
+  int32_t result = 0;
+  int decimalPlaces = -1;
+  for (int i = 0; str[i] != 0; i++) {
+    if (str[i] >= '0' && str[i] <= '9') {
+      result = result * 10 + str[i] - '0';
+      if (decimalPlaces >= 0) {
+        decimalPlaces++;
+      }
+    } else if (str[i] == '.' || str[i] == ',') {
+      decimalPlaces++;
+    }
+    if (decimalPlaces >= precision) {
+      break;
+    }
+  }
+
+  if (decimalPlaces < 0) {
+    decimalPlaces = 0;
+  }
+
+  while (decimalPlaces < precision) {
+    result *= 10;
+    decimalPlaces++;
+  }
+
+  return result;
+}
+
+const char *getManufacturer(int16_t id) {
+  switch (id) {
+    case SUPLA_MFR_ACSOFTWARE: {
+      return "AC Software";
+    }
+    case SUPLA_MFR_TRANSCOM: {
+      return "Transcom";
+    }
+    case SUPLA_MFR_LOGI: {
+      return "Logi";
+    }
+    case SUPLA_MFR_ZAMEL: {
+      return "Zamel";
+    }
+    case SUPLA_MFR_NICE: {
+      return "Nice";
+    }
+    case SUPLA_MFR_ITEAD: {
+      return "ITEAD";
+    }
+    case SUPLA_MFR_DOYLETRATT: {
+      return "Varilight";
+    }
+    case SUPLA_MFR_HEATPOL: {
+      return "Heatpol";
+    }
+    case SUPLA_MFR_FAKRO: {
+      return "Fakro";
+    }
+    case SUPLA_MFR_PEVEKO: {
+      return "Peveko";
+    }
+    case SUPLA_MFR_WEKTA: {
+      return "Wekta";
+    }
+    case SUPLA_MFR_STA_SYSTEM: {
+      return "STA System";
+    }
+    case SUPLA_MFR_DGF: {
+      return "DGF";
+    }
+    case SUPLA_MFR_COMELIT: {
+      return "Comelit";
+    }
+  }
+
+  return "Unknown";
+}

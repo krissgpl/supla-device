@@ -14,6 +14,10 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#define SUPLA_SHORT_VERSION "2.4.2"
-const char suplaDeviceVersion[] = "User SW, lib " SUPLA_SHORT_VERSION;
+#ifndef SRC_SUPLA_VERSION_H_
+#define SRC_SUPLA_VERSION_H_
 
+#define SUPLA_SHORT_VERSION "22.09.01"
+const char suplaDeviceVersion[] = "SDK " SUPLA_SHORT_VERSION "-dev";
+
+#endif  // SRC_SUPLA_VERSION_H_

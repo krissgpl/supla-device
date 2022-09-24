@@ -175,3 +175,131 @@ TEST(ToolsTest, urlEncodeTests) {
 
 }
 
+TEST(ToolsTest, strncmpInsensitiveTests) {
+  {
+    char s1[] = "ala ma supla";
+    char s2[] = "test";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), -1);
+  }
+
+  {
+    char s1[] = "testujemy";
+    char s2[] = "test";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 0);
+  }
+
+  {
+    char *s1 = nullptr;
+    char s2[] = "test";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), -1);
+  }
+
+  {
+    char *s1 = nullptr;
+    char *s2 = nullptr;
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 0);
+  }
+
+  {
+    char s1[] = "test";
+    char *s2 = nullptr;
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 1);
+  }
+
+  {
+    char s1[] = "supla testujemy";
+    char s2[] = "test";
+    EXPECT_EQ(strncmpInsensitive(s1 + 6, s2, 4), 0);
+  }
+
+  {
+    char s1[] = "supla testujemy";
+    char s2[] = "test";
+    EXPECT_EQ(strncmpInsensitive(s1 + 6, s2, 5), 1);
+  }
+
+  {
+    char s1[] = "Test";
+    char s2[] = "test";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 0);
+  }
+
+  {
+    char s1[] = "Test";
+    char s2[] = "TEST";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 0);
+  }
+
+  {
+    char s1[] = "Test";
+    char s2[] = "teST";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 0);
+  }
+
+  {
+    char s1[] = "test";
+    char s2[] = "tESt";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 4), 0);
+  }
+
+  {
+    char s1[] = "123test";
+    char s2[] = "123tESt";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 7), 0);
+  }
+
+  {
+    char s1[] = "123test";
+    char s2[] = "123tESt";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 8), 0);
+  }
+
+  {
+    char s1[] = "123te";
+    char s2[] = "123tESt";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 8), -1);
+  }
+
+  {
+    char s1[] = "123te";
+    char s2[] = "123tESt";
+    EXPECT_EQ(strncmpInsensitive(s1, s2, 5), 0);
+  }
+
+  {
+    char s1[] = "this.is.a.test.WiTh.Dots.org";
+    char s2[] = ".with.dots.org";
+    EXPECT_EQ(strncmpInsensitive(s1 + 14, s2, 6), 0);
+  }
+
+  {
+    char s1[] = "this.is.a.test.WiTh.Dots.org";
+    char s2[] = ".with.dots.org";
+    int size1 = strlen(s1);
+    int size2 = strlen(s2);
+
+    EXPECT_EQ(strncmpInsensitive(s1 + size1 - size2, s2, size2), 0);
+  }
+}
+
+TEST(ToolsTests, floatStringToIntTests) {
+  EXPECT_EQ(floatStringToInt("10", 2), 1000);
+  EXPECT_EQ(floatStringToInt("3,1415", 3), 3141);
+  EXPECT_EQ(floatStringToInt("3,1415", 4), 31415);
+}
+
+TEST(ToolsTests, stringToIntTests) {
+  EXPECT_EQ(stringToInt("10", 2), 10);
+  EXPECT_EQ(stringToInt("A0", 2), 0);
+  EXPECT_EQ(stringToInt("a5", 2), 0);
+  EXPECT_EQ(stringToInt("-5", 1), 0);
+  EXPECT_EQ(stringToInt("05"), 5);
+  EXPECT_EQ(stringToInt("0-2"), 0);
+  EXPECT_EQ(stringToInt("-1"), -1);
+  EXPECT_EQ(stringToInt(""), 0);
+  EXPECT_EQ(stringToInt("-1234.2"), 0);
+  EXPECT_EQ(stringToInt("-1234"), -1234);
+  EXPECT_EQ(stringToInt("1234"), 1234);
+  EXPECT_EQ(stringToInt("-1-"), 0);
+
+}

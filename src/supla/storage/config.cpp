@@ -5,15 +5,16 @@
  modify it under the terms of the GNU General Public License
  as published by the Free Software Foundation; either version 2
  of the License, or (at your option) any later version.
+
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
+
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
-
 
 /*
  * Default Config implementation assumes that values are stored in key-value
@@ -22,12 +23,16 @@
  * provide some key-value based interface.
  */
 
-#include "config.h"
-#include <supla-common/proto.h>
+#include <stdio.h>
 #include <string.h>
+#include <supla-common/proto.h>
 #include <supla/device/sw_update.h>
+#include <supla/time.h>
+#include <supla/log_wrapper.h>
 
-using namespace Supla;
+#include "config.h"
+
+namespace Supla {
 
 Config::Config() {
   Storage::SetConfigInstance(this);
@@ -37,37 +42,37 @@ Config::~Config() {
   Storage::SetConfigInstance(nullptr);
 }
 
-bool Config::getWiFiSSID(char *result) {
+bool Config::getWiFiSSID(char* result) {
   return getString("wifissid", result, MAX_SSID_SIZE);
 }
 
-bool Config::getWiFiPassword(char *result) {
+bool Config::getWiFiPassword(char* result) {
   return getString("wifipasswd", result, MAX_WIFI_PASSWORD_SIZE);
 }
 
-bool Config::getAltWiFiSSID(char *result) {
+bool Config::getAltWiFiSSID(char* result) {
   return getString("altwifissid", result, MAX_SSID_SIZE);
 }
 
-bool Config::getAltWiFiPassword(char *result) {
+bool Config::getAltWiFiPassword(char* result) {
   return getString("altwifipasswd", result, MAX_WIFI_PASSWORD_SIZE);
 }
 
-bool Config::getDeviceName(char *result) {
+bool Config::getDeviceName(char* result) {
   return getString("devicename", result, SUPLA_DEVICE_NAME_MAXSIZE);
 }
 
 bool Config::isSuplaCommProtocolEnabled() {
   // by default Supla communication protocol is enabled
   int8_t result = 1;
-  getInt8("suplacommproto", result);
+  getInt8("suplacommproto", &result);
   return result == 1;
 }
 
 bool Config::isMqttCommProtocolEnabled() {
-  // by default MQTT communication protocol is enabled
+  // by default MQTT communication protocol is disabled
   int8_t result = 0;
-  getInt8("mqttcommproto", result);
+  getInt8("mqttcommproto", &result);
   return result == 1;
 }
 
@@ -78,7 +83,7 @@ bool Config::setMqttTlsEnabled(bool enabled) {
 
 bool Config::isMqttTlsEnabled() {
   int8_t result = 0;
-  getInt8("mqtttls", result);
+  getInt8("mqtttls", &result);
   return result == 1;
 }
 
@@ -89,7 +94,7 @@ bool Config::setMqttAuthEnabled(bool enabled) {
 
 bool Config::isMqttAuthEnabled() {
   int8_t result = 1;
-  getInt8("mqttauth", result);
+  getInt8("mqttauth", &result);
   return result == 1;
 }
 
@@ -99,14 +104,14 @@ bool Config::setMqttRetainEnabled(bool enabled) {
 }
 
 bool Config::isMqttRetainEnabled() {
-  int8_t result = 1;
-  getInt8("mqttretain", result);
+  int8_t result = 0;
+  getInt8("mqttretain", &result);
   return result == 1;
 }
 
 enum DeviceMode Config::getDeviceMode() {
   int32_t result = 0;
-  if (getInt32("devicemode", result)) {
+  if (getInt32("devicemode", &result)) {
     switch (result) {
       case 0:
         return DEVICE_MODE_NOT_SET;
@@ -132,10 +137,11 @@ bool Config::getSuplaServer(char* result) {
 
 int32_t Config::getSuplaServerPort() {
   int32_t result = -1;
-  getInt32("suplaport", result);
+  getInt32("suplaport", &result);
   if (result <= 0 || result > 65536) {
     result = 2016;
   }
+
   return result;
 }
 
@@ -157,15 +163,19 @@ bool Config::getMqttServer(char* result) {
 
 int32_t Config::getMqttServerPort() {
   int32_t result = -1;
-  getInt32("mqttport", result);
+  getInt32("mqttport", &result);
   if (result <= 0 || result > 65536) {
-    result = 1883;
+    if (isMqttTlsEnabled()) {
+      result = 8883;
+    } else {
+      result = 1883;
+    }
   }
   return result;
 }
 
 bool Config::getMqttUser(char* result) {
-  return getString("mqttuser", result, MQTT_CLIENTID_MAX_SIZE);
+  return getString("mqttuser", result, MQTT_USERNAME_MAX_SIZE);
 }
 
 bool Config::getMqttPassword(char* result) {
@@ -174,51 +184,42 @@ bool Config::getMqttPassword(char* result) {
 
 int32_t Config::getMqttQos() {
   int32_t result = -1;
-  getInt32("mqttqos", result);
+  getInt32("mqttqos", &result);
   if (result < 0) {
     result = 0;
   }
   return result;
 }
 
-int32_t Config::getMqttPoolPublicationDelay() {
-  int32_t result = -1;
-  getInt32("mqttpooldelay", result);
-  if (result < 0) {
-    result = 0;
-  }
-  return result;
-}
-
-bool Config::setWiFiSSID(const char *ssid) {
+bool Config::setWiFiSSID(const char* ssid) {
   if (strlen(ssid) > MAX_SSID_SIZE - 1) {
     return false;
   }
   return setString("wifissid", ssid);
 }
 
-bool Config::setWiFiPassword(const char *password) {
+bool Config::setWiFiPassword(const char* password) {
   if (strlen(password) > MAX_WIFI_PASSWORD_SIZE - 1) {
     return false;
   }
   return setString("wifipasswd", password);
 }
 
-bool Config::setAltWiFiSSID(const char *ssid) {
+bool Config::setAltWiFiSSID(const char* ssid) {
   if (strlen(ssid) > MAX_SSID_SIZE - 1) {
     return false;
   }
   return setString("altwifissid", ssid);
 }
 
-bool Config::setAltWiFiPassword(const char *password) {
+bool Config::setAltWiFiPassword(const char* password) {
   if (strlen(password) > MAX_WIFI_PASSWORD_SIZE - 1) {
     return false;
   }
   return setString("altwifipasswd", password);
 }
 
-bool Config::setDeviceName(const char *name) {
+bool Config::setDeviceName(const char* name) {
   if (strlen(name) > SUPLA_DEVICE_NAME_MAXSIZE - 1) {
     return false;
   }
@@ -300,7 +301,7 @@ bool Config::setMqttServerPort(int32_t port) {
 }
 
 bool Config::setMqttUser(const char* user) {
-  if (strlen(user) > MQTT_CLIENTID_MAX_SIZE - 1) {
+  if (strlen(user) > MQTT_USERNAME_MAX_SIZE - 1) {
     return false;
   }
   return setString("mqttuser", user);
@@ -322,15 +323,6 @@ bool Config::setMqttQos(int32_t qos) {
   return setInt32("mqttqos", qos);
 }
 
-bool Config::setMqttPoolPublicationDelay(int32_t poolDelay) {
-  if (poolDelay < 0) {
-    poolDelay = 0;
-  } else if (poolDelay > 3600) {
-    poolDelay = 3600;
-  }
-  return setInt32("mqttpooldelay", poolDelay);
-}
-
 bool Config::setMqttPrefix(const char* prefix) {
   if (strlen(prefix) > 49 - 1) {
     return false;
@@ -350,18 +342,18 @@ bool Config::generateGuidAndAuthkey() {
   return false;
 }
 
-bool Config::getSwUpdateServer(char *url) {
+bool Config::getSwUpdateServer(char* url) {
   return getString("swupdateurl", url, SUPLA_MAX_URL_LENGTH);
 }
 
 bool Config::isSwUpdateBeta() {
   // by default beta sw update is disabled
   int8_t result = 0;
-  getInt8("swupdatebeta", result);
+  getInt8("swupdatebeta", &result);
   return result == 1;
 }
 
-bool Config::setSwUpdateServer(const char *url) {
+bool Config::setSwUpdateServer(const char* url) {
   if (strlen(url) > SUPLA_MAX_URL_LENGTH - 1) {
     return false;
   }
@@ -372,3 +364,98 @@ bool Config::setSwUpdateBeta(bool enabled) {
   int8_t value = (enabled ? 1 : 0);
   return setInt8("swupdatebeta", value);
 }
+
+bool Config::getCustomCA(char* result, int size) {
+  return getString("custom_ca", result, size);
+}
+
+int Config::getCustomCASize() {
+  return getStringSize("custom_ca");
+}
+
+bool Config::setCustomCA(const char* customCA) {
+  return setString("custom_ca", customCA);
+}
+
+void Config::saveWithDelay(uint32_t delayMs) {
+  if (saveDelayMs == 0) {
+    saveDelayMs = delayMs;
+    saveDelayTimestamp = millis();
+  }
+}
+
+void Config::saveIfNeeded() {
+  if (saveDelayMs) {
+    if (millis() - saveDelayTimestamp > saveDelayMs) {
+      commit();
+      saveDelayMs = 0;
+      saveDelayTimestamp = 0;
+    }
+  }
+}
+
+void Config::generateKey(char *output, int number, const char *key) {
+  snprintf(output, SUPLA_CONFIG_MAX_KEY_SIZE, "%d_%s", number, key);
+}
+
+bool Config::isMinimalConfigReady() {
+  char buf[512] = {};
+  // TODO(klew): minimal config check for protocol related params shoud be
+  // moved to protocol layer level.
+
+  // Common part
+  memset(buf, 0, sizeof(buf));
+  if (!getWiFiSSID(buf) || strlen(buf) == 0) {
+    SUPLA_LOG_DEBUG("Wi-Fi SSID missing");
+    return false;
+  }
+  memset(buf, 0, sizeof(buf));
+  if (!getWiFiPassword(buf) || strlen(buf) == 0) {
+    SUPLA_LOG_DEBUG("Wi-Fi password missing");
+    return false;
+  }
+
+  // Supla protocol part
+  // TODO(klew): move to supla srpc layer
+  if (isSuplaCommProtocolEnabled()) {
+    if (!getSuplaServer(buf) || strlen(buf) == 0) {
+      SUPLA_LOG_DEBUG("Supla server missing");
+      return false;
+    }
+    memset(buf, 0, sizeof(buf));
+    if (!getEmail(buf) || strlen(buf) == 0) {
+      SUPLA_LOG_DEBUG("Mail address missing");
+      return false;
+    }
+  }
+
+  // TODO(klew): move to MQTT layer
+  if (isMqttCommProtocolEnabled()) {
+    memset(buf, 0, sizeof(buf));
+    if (!getMqttServer(buf) || strlen(buf) == 0) {
+      SUPLA_LOG_DEBUG("MQTT: Missing server address");
+      return false;
+    }
+
+    if (isMqttAuthEnabled()) {
+      memset(buf, 0, sizeof(buf));
+      if (!getMqttUser(buf) || strlen(buf) == 0) {
+        SUPLA_LOG_DEBUG("MQTT: Missing username");
+        return false;
+      }
+
+      memset(buf, 0, sizeof(buf));
+      if (!getMqttPassword(buf) || strlen(buf) == 0) {
+        SUPLA_LOG_DEBUG("MQTT: Missing password");
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool Config::isConfigModeSupported() {
+  return true;
+}
+
+}  // namespace Supla

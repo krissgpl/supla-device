@@ -21,10 +21,11 @@
 
 #include <LittleFS.h>
 #include "littlefs_config.h"
-#include <supla-common/log.h>
+#include <supla/log_wrapper.h>
 
 namespace Supla {
   const char ConfigFileName[] = "/supla-dev.cfg";
+  const char CustomCAFileName[] = "/custom_ca.pem";
 };
 
 #define SUPLA_LITTLEFS_CONFIG_BUF_SIZE 1024
@@ -34,23 +35,21 @@ Supla::LittleFsConfig::LittleFsConfig() {}
 Supla::LittleFsConfig::~LittleFsConfig() {}
 
 bool Supla::LittleFsConfig::init() {
-  bool result = LittleFS.begin();
-  if (!result) {
-    supla_log(LOG_WARNING, "LittleFsConfig: formatting partition");
-    LittleFS.format();
+  if (first) {
+    SUPLA_LOG_WARNING(
+        "LittleFsConfig: init called on non empty database. Aborting");
+    // init can be done only on empty storage
+    return false;
   }
-  result = LittleFS.begin();
-  if (result) {
-    supla_log(LOG_DEBUG, "LittleFsConfig: init successful");
-  } else {
-    supla_log(LOG_ERR,
-        "LittleFsConfig: failed to mount and to format partition");
+
+  if (!initLittleFs()) {
+    return false;
   }
 
   if (LittleFS.exists(ConfigFileName)) {
     File cfg = LittleFS.open(ConfigFileName, "r");
     if (!cfg) {
-      supla_log(LOG_ERR, "LittleFsConfig: failed to open config file");
+      SUPLA_LOG_ERROR("LittleFsConfig: failed to open config file");
       LittleFS.end();
       return false;
     }
@@ -58,7 +57,7 @@ bool Supla::LittleFsConfig::init() {
     int fileSize = cfg.size();
 
     if (fileSize > SUPLA_LITTLEFS_CONFIG_BUF_SIZE) {
-      supla_log(LOG_ERR, "LittleFsConfig: config file is too big");
+      SUPLA_LOG_ERROR("LittleFsConfig: config file is too big");
       cfg.close();
       LittleFS.end();
       return false;
@@ -70,31 +69,34 @@ bool Supla::LittleFsConfig::init() {
     cfg.close();
     LittleFS.end();
     if (bytesRead != fileSize) {
-      supla_log(LOG_DEBUG,
+      SUPLA_LOG_DEBUG(
           "LittleFsConfig: read bytes %d, while file is %d bytes",
           bytesRead,
           fileSize);
       return false;
     }
 
-    supla_log(LOG_DEBUG, "LittleFsConfig: initializing storage from file...");
+    SUPLA_LOG_DEBUG("LittleFsConfig: initializing storage from file...");
     return initFromMemory(buf, fileSize);
   } else {
-    supla_log(LOG_DEBUG, "LittleFsConfig:: config file missing");
+    SUPLA_LOG_DEBUG("LittleFsConfig:: config file missing");
   }
   LittleFS.end();
   return true;
 }
 
 void Supla::LittleFsConfig::commit() {
-  uint8_t buf[SUPLA_LITTLEFS_CONFIG_BUF_SIZE];
+  uint8_t buf[SUPLA_LITTLEFS_CONFIG_BUF_SIZE] = {};
 
   size_t dataSize = serializeToMemory(buf, SUPLA_LITTLEFS_CONFIG_BUF_SIZE);
 
-  LittleFS.begin();
+  if (!initLittleFs()) {
+    return;
+  }
+
   File cfg = LittleFS.open(ConfigFileName, "w");
   if (!cfg) {
-    supla_log(LOG_ERR, "LittleFsConfig: failed to open config file for write");
+    SUPLA_LOG_ERROR("LittleFsConfig: failed to open config file for write");
     LittleFS.end();
     return;
   }
@@ -104,4 +106,114 @@ void Supla::LittleFsConfig::commit() {
   LittleFS.end();
 }
 
+bool Supla::LittleFsConfig::getCustomCA(char* customCA, int maxSize) {
+  if (!initLittleFs()) {
+    return false;
+  }
+
+  if (LittleFS.exists(CustomCAFileName)) {
+    File file = LittleFS.open(CustomCAFileName, "r");
+    if (!file) {
+      SUPLA_LOG_ERROR("LittleFsConfig: failed to open custom CA file");
+      LittleFS.end();
+      return false;
+    }
+
+    int fileSize = file.size();
+
+    if (fileSize > maxSize) {
+      SUPLA_LOG_ERROR("LittleFsConfig: custom CA file is too big");
+      file.close();
+      LittleFS.end();
+      return false;
+    }
+
+    int bytesRead = file.read(reinterpret_cast<uint8_t *>(customCA), fileSize);
+
+    file.close();
+    LittleFS.end();
+    if (bytesRead != fileSize) {
+      SUPLA_LOG_DEBUG(
+          "LittleFsConfig: read bytes %d, while file is %d bytes",
+          bytesRead,
+          fileSize);
+      return false;
+    }
+
+    return true;
+  } else {
+    SUPLA_LOG_DEBUG("LittleFsConfig:: custom ca file missing");
+  }
+  LittleFS.end();
+  return true;
+}
+
+int Supla::LittleFsConfig::getCustomCASize() {
+  if (!initLittleFs()) {
+    return 0;
+  }
+
+  if (LittleFS.exists(CustomCAFileName)) {
+    File file = LittleFS.open(CustomCAFileName, "r");
+    if (!file) {
+      SUPLA_LOG_ERROR("LittleFsConfig: failed to open custom CA file");
+      LittleFS.end();
+      return false;
+    }
+
+    int fileSize = file.size();
+
+    file.close();
+    LittleFS.end();
+    return fileSize;
+  }
+  return 0;
+}
+
+bool Supla::LittleFsConfig::setCustomCA(const char* customCA) {
+  size_t dataSize = strlen(customCA);
+
+  if (!initLittleFs()) {
+    return false;
+  }
+
+  File file = LittleFS.open(CustomCAFileName, "w");
+  if (!file) {
+    SUPLA_LOG_ERROR(
+        "LittleFsConfig: failed to open custom CA file for write");
+    LittleFS.end();
+    return false;
+  }
+
+  file.write(reinterpret_cast<const uint8_t*>(customCA), dataSize);
+  file.close();
+  LittleFS.end();
+  return true;
+}
+
+bool Supla::LittleFsConfig::initLittleFs() {
+  bool result = LittleFS.begin();
+  if (!result) {
+    SUPLA_LOG_WARNING("LittleFsConfig: formatting partition");
+    LittleFS.format();
+    result = LittleFS.begin();
+    if (!result) {
+      SUPLA_LOG_ERROR(
+          "LittleFsConfig: failed to mount and to format partition");
+    }
+  }
+
+  return result;
+}
+
+void Supla::LittleFsConfig::removeAll() {
+  if (!initLittleFs()) {
+    return;
+  }
+
+  LittleFS.remove(CustomCAFileName);
+  LittleFS.remove(ConfigFileName);
+
+  LittleFS.end();
+}
 #endif

@@ -20,13 +20,14 @@
 #include <esp_random.h>
 #endif
 
-#include <nvs_flash.h>
-#include <nvs.h>
-#include <supla-common/log.h>
-#include <supla-common/proto.h>
 #include <esp_system.h>
+#include <nvs.h>
+#include <nvs_flash.h>
+#include <supla/log_wrapper.h>
+#include <supla-common/proto.h>
+#include <cstring>
 
-using namespace Supla;
+namespace Supla {
 
 NvsConfig::NvsConfig() {
 }
@@ -35,24 +36,35 @@ NvsConfig::~NvsConfig() {
 }
 
 bool NvsConfig::init() {
-  supla_log(LOG_DEBUG, "NvsConfig: initializing nvs based config storage");
-  ESP_ERROR_CHECK(nvs_flash_init());
+  SUPLA_LOG_DEBUG("NvsConfig: initializing nvs based config storage");
+  esp_err_t err = nvs_flash_init();
+  if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
+    nvs_flash_erase();
+    err = nvs_flash_init();
+    if (err != ESP_OK) {
+      SUPLA_LOG_ERROR("NvsConfig: failed to init NVS storage");
+      return false;
+    }
+  }
   nvs_stats_t nvs_stats;
   nvs_get_stats(NULL, &nvs_stats);
-  supla_log(
-      LOG_DEBUG,
+  SUPLA_LOG_DEBUG(
       "NVS Count: UsedEntries = (%d), FreeEntries = (%d), AllEntries = (%d)",
       nvs_stats.used_entries,
       nvs_stats.free_entries,
       nvs_stats.total_entries);
-  ESP_ERROR_CHECK(nvs_open("supla", NVS_READWRITE, &nvsHandle));
+  err = nvs_open("supla", NVS_READWRITE, &nvsHandle);
+  if (err != ESP_OK) {
+    SUPLA_LOG_ERROR("NvsConfig: failed to open NVS storage");
+    return false;
+  }
   return true;
 }
 
 void NvsConfig::removeAll() {
   esp_err_t err = nvs_erase_all(nvsHandle);
   if (err != ESP_OK) {
-    supla_log(LOG_ERR, "Failed to erase NVS storage (%d)", err);
+    SUPLA_LOG_ERROR("Failed to erase NVS storage (%d)", err);
   }
   nvs_commit(nvsHandle);
 }
@@ -64,12 +76,17 @@ bool NvsConfig::setString(const char* key, const char* value) {
 }
 
 bool NvsConfig::getString(const char* key, char* value, size_t maxSize) {
-  esp_err_t err =
-    nvs_get_str(nvsHandle, key, value, &maxSize);
+  esp_err_t err = nvs_get_str(nvsHandle, key, value, &maxSize);
   return err == ESP_OK;
 }
 
 int NvsConfig::getStringSize(const char* key) {
+  auto buf = new char[4000];
+  if (getString(key, buf, 4000)) {
+    int len = strnlen(buf, 4000);
+    delete [] buf;
+    return len;
+  }
   return -1;
 }
 
@@ -87,26 +104,25 @@ int NvsConfig::getBlobSize(const char* key) {
   return -1;
 }
 
-bool NvsConfig::getInt8(const char* key, int8_t& result) {
-  esp_err_t err = nvs_get_i8(nvsHandle, key, &result);
+bool NvsConfig::getInt8(const char* key, int8_t* result) {
+  esp_err_t err = nvs_get_i8(nvsHandle, key, result);
   return err == ESP_OK;
 }
 
-bool NvsConfig::getUInt8(const char* key, uint8_t& result) {
-  esp_err_t err = nvs_get_u8(nvsHandle, key, &result);
+bool NvsConfig::getUInt8(const char* key, uint8_t* result) {
+  esp_err_t err = nvs_get_u8(nvsHandle, key, result);
   return err == ESP_OK;
 }
 
-bool NvsConfig::getInt32(const char* key, int32_t& result) {
-  esp_err_t err = nvs_get_i32(nvsHandle, key, &result);
+bool NvsConfig::getInt32(const char* key, int32_t* result) {
+  esp_err_t err = nvs_get_i32(nvsHandle, key, result);
   return err == ESP_OK;
 }
 
-bool NvsConfig::getUInt32(const char* key, uint32_t& result) {
-  esp_err_t err = nvs_get_u32(nvsHandle, key, &result);
+bool NvsConfig::getUInt32(const char* key, uint32_t* result) {
+  esp_err_t err = nvs_get_u32(nvsHandle, key, result);
   return err == ESP_OK;
 }
-
 
 bool NvsConfig::setInt8(const char* key, const int8_t value) {
   esp_err_t err = nvs_set_i8(nvsHandle, key, value);
@@ -144,3 +160,5 @@ bool NvsConfig::generateGuidAndAuthkey() {
   commit();
   return true;
 }
+
+}  // namespace Supla

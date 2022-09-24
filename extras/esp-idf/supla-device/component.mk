@@ -18,7 +18,6 @@ COMPONENT_OBJS := \
   ../../../src/supla/io.o \
   ../../../src/supla/local_action.o \
   ../../../src/supla/log_wrapper.o \
-  ../../../src/supla/status.o \
   ../../../src/supla/time.o \
   ../../../src/supla/timer.o \
   ../../../src/supla/tools.o \
@@ -44,6 +43,16 @@ COMPONENT_OBJS := \
   ../../../src/supla/network/html/custom_sw_update.o \
   ../../../src/supla/network/html/sw_update_beta.o \
   ../../../src/supla/network/html/sw_update.o \
+  ../../../src/supla/network/html/security_certificate.o \
+  ../../../src/supla/network/html/button_multiclick_parameters.o \
+  ../../../src/supla/network/html/custom_parameter.o \
+  ../../../src/supla/network/client.o \
+  ../../../src/supla/network/ip_address.o \
+  \
+  ../../../src/supla/protocol/protocol_layer.o \
+  ../../../src/supla/protocol/mqtt.o \
+  ../../../src/supla/protocol/mqtt_topic.o \
+  ../../../src/supla/protocol/supla_srpc.o \
   \
   ../../../src/supla/clock/clock.o \
 	\
@@ -112,6 +121,7 @@ COMPONENT_OBJS := \
   ../../porting/esp-idf/esp_idf_web_server.o \
   ../../porting/esp-idf/esp_idf_mutex.o \
   ../../porting/esp-idf/esp_idf_ota.o \
+  ../../porting/esp-idf/esp_idf_client.o \
 
 
 COMPONENT_SRCDIRS := ../../../src/supla-common \
@@ -125,10 +135,11 @@ COMPONENT_SRCDIRS := ../../../src/supla-common \
 										 ../../../src \
 										 ../../../src/supla/network \
 										 ../../../src/supla/network/html \
+										 ../../../src/supla/protocol \
 										 ../../porting/esp-idf \
 										 ../../../src/nettle
 
 CFLAGS += -DSUPLA_DEVICE -DSUPLA_DEVICE_ESP8266
 CPPFLAGS += -DSUPLA_DEVICE -DSUPLA_DEVICE_ESP8266
 
-COMPONENT_EMBED_TXTFILES := supla_org_cert.pem
+COMPONENT_EMBED_TXTFILES := supla_org_cert.pem supla_3rd_cert.pem

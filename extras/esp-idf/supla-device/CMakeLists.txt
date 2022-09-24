@@ -18,7 +18,6 @@ set(SUPLA_DEVICE_SRCS
   ../../../src/supla/io.cpp
   ../../../src/supla/local_action.cpp
   ../../../src/supla/log_wrapper.cpp
-  ../../../src/supla/status.cpp
   ../../../src/supla/time.cpp
   ../../../src/supla/timer.cpp
   ../../../src/supla/tools.cpp
@@ -44,6 +43,16 @@ set(SUPLA_DEVICE_SRCS
   ../../../src/supla/network/html/custom_sw_update.cpp
   ../../../src/supla/network/html/sw_update_beta.cpp
   ../../../src/supla/network/html/sw_update.cpp
+  ../../../src/supla/network/html/security_certificate.cpp
+  ../../../src/supla/network/html/button_multiclick_parameters.cpp
+  ../../../src/supla/network/html/custom_parameter.cpp
+  ../../../src/supla/network/client.cpp
+  ../../../src/supla/network/ip_address.cpp
+
+  ../../../src/supla/protocol/protocol_layer.cpp
+  ../../../src/supla/protocol/supla_srpc.cpp
+  ../../../src/supla/protocol/mqtt.cpp
+  ../../../src/supla/protocol/mqtt_topic.cpp
 
   ../../../src/supla/clock/clock.cpp
 
@@ -92,6 +101,8 @@ set(SUPLA_DEVICE_SRCS
   ../../../src/supla/sensor/virtual_binary.cpp
   ../../../src/supla/sensor/distance.cpp
   ../../../src/supla/sensor/HC_SR04.cpp
+  ../../../src/supla/sensor/ntc10k.cpp
+  ../../../src/supla/pv/fronius.cpp
 )
 
 set(NETTLE_SRCS
@@ -118,6 +129,8 @@ set(SUPLA_DEVICE_PORTING_SRCS
   ../../porting/esp-idf/esp_idf_web_server.cpp
   ../../porting/esp-idf/esp_idf_mutex.cpp
   ../../porting/esp-idf/esp_idf_ota.cpp
+  ../../porting/esp-idf/esp_idf_client.cpp
+  ../../porting/esp-idf/esp_mqtt.cpp
 )
 
 
@@ -127,8 +140,19 @@ idf_component_register(SRCS
   ${NETTLE_SRCS}
   ${SUPLA_DEVICE_PORTING_SRCS}
   INCLUDE_DIRS "../../../src/" "../../porting/esp-idf"
-  REQUIRES esp-tls nvs_flash spiffs esp_http_server app_update esp_http_client json
-  EMBED_TXTFILES supla_org_cert.pem
+  REQUIRES
+    esp-tls
+    nvs_flash
+    spiffs
+    esp_http_server
+    app_update
+    esp_http_client
+    json
+    esp_wifi
+    driver
+    mqtt
+    esp_timer
+  EMBED_TXTFILES supla_org_cert.pem supla_3rd_cert.pem
 )
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC SUPLA_DEVICE)

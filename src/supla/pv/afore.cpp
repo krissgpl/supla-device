@@ -5,23 +5,26 @@
  modify it under the terms of the GNU General Public License
  as published by the Free Software Foundation; either version 2
  of the License, or (at your option) any later version.
+
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
+
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
-#include "afore.h"
-#include <supla-common/log.h>
-#include <supla/time.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+#include <supla/log_wrapper.h>
+#include <supla/time.h>
 
-using namespace Supla;
-using namespace PV;
+#include "afore.h"
+
+namespace Supla {
+namespace PV {
 
 Afore::Afore(IPAddress ip, int port, const char *loginAndPass)
     : ip(ip),
@@ -47,23 +50,24 @@ Afore::Afore(IPAddress ip, int port, const char *loginAndPass)
 void Afore::iterateAlways() {
   if (dataFetchInProgress) {
     if (millis() - connectionTimeoutMs > 30000) {
-      supla_log(LOG_DEBUG, "AFORE: connection timeout. Remote host is not responding");
-      pvClient.stop();
+      SUPLA_LOG_DEBUG(
+                "AFORE: connection timeout. Remote host is not responding");
+      client->stop();
       dataFetchInProgress = false;
       dataIsReady = false;
       return;
     }
-    if (!pvClient.connected()) {
-      supla_log(LOG_DEBUG, "AFORE fetch completed");
+    if (!client->connected()) {
+      SUPLA_LOG_DEBUG("AFORE fetch completed");
       dataFetchInProgress = false;
       dataIsReady = true;
     }
-    if (pvClient.available()) {
-      supla_log(LOG_DEBUG, "Reading data from afore: %d", pvClient.available());
+    if (client->available()) {
+      SUPLA_LOG_DEBUG("Reading data from afore: %d", client->available());
     }
-    while (pvClient.available()) {
+    while (client->available()) {
       char c;
-      c = pvClient.read();
+      c = client->read();
       if (c == '\n') {
         if (varFound) {
           if (bytesCounter > 79) bytesCounter = 79;
@@ -99,8 +103,8 @@ void Afore::iterateAlways() {
         }
       }
     }
-    if (!pvClient.connected()) {
-      pvClient.stop();
+    if (!client->connected()) {
+      client->stop();
     }
   }
   if (dataIsReady) {
@@ -113,22 +117,22 @@ void Afore::iterateAlways() {
 
 bool Afore::iterateConnected(void *srpc) {
   if (!dataFetchInProgress) {
-    if (lastReadTime == 0 || millis() - lastReadTime > refreshRateSec*1000) {
+    if (lastReadTime == 0 || millis() - lastReadTime > refreshRateSec * 1000) {
       lastReadTime = millis();
-      supla_log(LOG_DEBUG, "AFORE connecting");
-      if (pvClient.connect(ip, port)) {
+      SUPLA_LOG_DEBUG("AFORE connecting");
+      if (client->connect(ip, port)) {
         retryCounter = 0;
         dataFetchInProgress = true;
         connectionTimeoutMs = lastReadTime;
 
-        pvClient.print("GET /status.html HTTP/1.1\nAuthorization: Basic ");
-        pvClient.println(loginAndPassword);
-        pvClient.println("Connection: close");
-        pvClient.println();
+        client->print("GET /status.html HTTP/1.1\nAuthorization: Basic ");
+        client->println(loginAndPassword);
+        client->println("Connection: close");
+        client->println();
 
       } else {  // if connection wasn't successful, try few times. If it fails,
                 // then assume that inverter is off during the night
-        supla_log(LOG_DEBUG, "Failed to connect to Afore");
+        SUPLA_LOG_DEBUG("Failed to connect to Afore");
         retryCounter++;
         if (retryCounter > 3) {
           currentPower = 0;
@@ -143,3 +147,5 @@ bool Afore::iterateConnected(void *srpc) {
 void Afore::readValuesFromDevice() {
 }
 
+}  // namespace PV
+}  // namespace Supla
