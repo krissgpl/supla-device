@@ -23,11 +23,12 @@
 class ElementMock : public Supla::Element {
   public:
   MOCK_METHOD(void, onInit, (), (override));
+  MOCK_METHOD(void, onLoadConfig, (), (override));
   MOCK_METHOD(void, onLoadState, (), (override));
   MOCK_METHOD(void, onSaveState, (), (override));
   MOCK_METHOD(void, onRegistered, (Supla::Protocol::SuplaSrpc *), (override));
   MOCK_METHOD(void, iterateAlways, (), (override));
-  MOCK_METHOD(bool, iterateConnected, (void *), (override));
+  MOCK_METHOD(bool, iterateConnected, (), (override));
   MOCK_METHOD(void, onTimer, (), (override));
   MOCK_METHOD(void, onFastTimer, (), (override));
   MOCK_METHOD(int, handleNewValueFromServer, (TSD_SuplaChannelNewValue *), (override));

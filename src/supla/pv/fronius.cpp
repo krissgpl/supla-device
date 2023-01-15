@@ -160,7 +160,7 @@ void Fronius::iterateAlways() {
   }
 }
 
-bool Fronius::iterateConnected(void *srpc) {
+bool Fronius::iterateConnected() {
   if (!dataFetchInProgress) {
     if (lastReadTime == 0 || millis() - lastReadTime > refreshRateSec * 1000) {
       lastReadTime = millis();
@@ -176,10 +176,11 @@ bool Fronius::iterateConnected(void *srpc) {
             "GET "
             "/solar_api/v1/GetInverterRealtimeData.cgi?Scope=Device&DeviceID=");
         char idBuf[20];
-        snprintf(idBuf, sizeof(idBuf), "%d", deviceId);
+        snprintf(idBuf, sizeof(idBuf), "%d&DeviceId=%d", deviceId, deviceId);
         strcat(buf, idBuf);  // NOLINT(runtime/printf)
         strcat(buf,          // NOLINT(runtime/printf)
             "&DataCollection=CommonInverterData HTTP/1.1");
+        SUPLA_LOG_VERBOSE("Fronius query: %s", buf);
         client->println(buf);
         client->println("Host: localhost");
         client->println("Connection: close");
@@ -199,7 +200,7 @@ bool Fronius::iterateConnected(void *srpc) {
       }
     }
   }
-  return Element::iterateConnected(srpc);
+  return Element::iterateConnected();
 }
 
 void Fronius::readValuesFromDevice() {

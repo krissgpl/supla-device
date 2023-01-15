@@ -88,6 +88,7 @@ void Supla::Device::StatusLed::iterateAlways() {
       currentSequence = REGISTERED_AND_READY;
       break;
 
+    case STATUS_OFFLINE_MODE:
     case STATUS_REGISTERED_AND_READY:
       currentSequence = REGISTERED_AND_READY;
       checkProtocolsStatus = true;
@@ -97,14 +98,24 @@ void Supla::Device::StatusLed::iterateAlways() {
       currentSequence = CONFIG_MODE;
       break;
 
-    case STATUS_SW_DOWNLOAD:
+    case STATUS_SW_DOWNLOAD: {
       currentSequence = SW_DOWNLOAD;
       break;
+    }
 
     case STATUS_SUPLA_PROTOCOL_DISABLED:
       currentSequence = REGISTERED_AND_READY;
       checkProtocolsStatus = true;
       break;
+
+    case STATUS_TEST_WAIT_FOR_CFG_BUTTON: {
+      if (SuplaDevice.isSleepingDeviceEnabled()) {
+        currentSequence = REGISTERED_AND_READY;
+      } else {
+        currentSequence = TESTING_PROCEDURE;
+      }
+      break;
+    }
 
     case STATUS_UNKNOWN:
     case STATUS_ALREADY_INITIALIZED:
@@ -182,6 +193,11 @@ void Supla::Device::StatusLed::iterateAlways() {
     case PACZKOW_WE_HAVE_A_PROBLEM:
       onDuration = 300;
       offDuration = 100;
+      break;
+
+    case TESTING_PROCEDURE:
+      onDuration = 50;
+      offDuration = 50;
       break;
 
     case CUSTOM_SEQUENCE:

@@ -35,6 +35,31 @@ namespace Supla {
 
 namespace Protocol {
 
+// https://developers.home-assistant.io/docs/core/entity/sensor/
+enum HAStateClass {
+  HAStateClass_None,
+  HAStateClass_Measurement,
+  HAStateClass_Total,
+  HAStateClass_TotalIncreasing
+};
+
+// https://www.home-assistant.io/integrations/sensor/#device-class
+// Not all devices classes are implemented here. Only those which we use are
+// present. Add more if needed.
+// Also not all parameters used in Supla have corresponding device class in
+// HA, so in such case we don't set the device class.
+enum HADeviceClass {
+  HADeviceClass_None,
+  HADeviceClass_ApparentPower,
+  HADeviceClass_Current,
+  HADeviceClass_Energy,
+  HADeviceClass_Frequency,
+  HADeviceClass_PowerFactor,
+  HADeviceClass_Power,
+  HADeviceClass_ReactivePower,
+  HADeviceClass_Voltage
+};
+
 class Mqtt : public ProtocolLayer {
  public:
   explicit Mqtt(SuplaDeviceClass *sdc);
@@ -66,12 +91,20 @@ class Mqtt : public ProtocolLayer {
   void publishDouble(const char *topic,
                double payload,
                int qos = -1,
-               int retain = -1);
+               int retain = -1,
+               int precision = 2);
   void publishChannelState(int channel);
+  void publishExtendedChannelState(int channel);
   void subscribeChannel(int channel);
   void subscribe(const char *topic, int qos = -1);
-  void notifyChannelChange(int channel) override;
   bool isUpdatePending() override;
+  bool isRegisteredAndReady() override;
+
+  void sendActionTrigger(uint8_t channelNumber, uint32_t actionId) override;
+  void sendChannelValueChanged(uint8_t channelNumber, char *value,
+      unsigned char offline, uint32_t validityTimeSec) override;
+  void sendExtendedChannelValueChanged(uint8_t channelNumber,
+    TSuplaChannelExtendedValue *value) override;
 
   bool processData(const char *topic, const char *payload);
 
@@ -84,11 +117,26 @@ class Mqtt : public ProtocolLayer {
   void publishHADiscoveryRelay(Supla::Element *);
   void publishHADiscoveryThermometer(Supla::Element *);
   void publishHADiscoveryHumidity(Supla::Element *);
+  void publishHADiscoveryActionTrigger(Supla::Element *);
+  void publishHADiscoveryEM(Supla::Element *);
+
+  // parameterName has to be ASCII string with small caps and underscores
+  // between words i.e. "total_forward_active_energy".
+  // Name of parameter will be generated in following way:
+  // "Total forward active energy"
+  void publishHADiscoveryEMParameter(
+    Supla::Element *element, int parameterId, const char *parameterName,
+    const char *units, Supla::Protocol::HAStateClass stateClass,
+    Supla::Protocol::HADeviceClass deviceClass);
+  const char *getActionTriggerType(uint8_t actionIdx);
+  bool isActionTriggerEnabled(Supla::Channel *ch, uint8_t actionIdx);
   virtual void publishImp(const char *topic,
                           const char *payload,
                           int qos,
                           bool retain) = 0;
   virtual void subscribeImp(const char *topic, int qos) = 0;
+  const char *getStateClassStr(Supla::Protocol::HAStateClass stateClass);
+  const char *getDeviceClassStr(Supla::Protocol::HADeviceClass deviceClass);
 
   bool isPayloadOn(const char *);
 
@@ -103,12 +151,19 @@ class Mqtt : public ProtocolLayer {
   bool retainCfg = false;
   bool enabled = true;
   bool connecting = false;
+  bool connected = false;
   bool error = false;
   char *prefix = nullptr;
   int prefixLen = 0;
   Supla::Uptime uptime;
-  bool *channelChangedFlag = nullptr;
   int channelsCount = 0;
+  // Button number is incremented on each publishHADiscoveryActionTrigger call
+  // and it is reset on publishDeviceStatus. So we publish button numbers
+  // starting from 1 and incrementing on each ActionTrigger channel found
+  // in current setup.
+  // It is important to call publishDeviceStatus first, then to call
+  // publishHADiscoveryActionTrigger for each AT channel.
+  int buttonNumber = 0;
 };
 }  // namespace Protocol
 }  // namespace Supla

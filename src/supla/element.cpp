@@ -97,24 +97,30 @@ void Element::onRegistered(Supla::Protocol::SuplaSrpc *suplaSrpc) {
   }
   auto ch = getChannel();
 
-  while (ch != nullptr) {
-    if (ch->isSleepingEnabled()) {
+  if (ch != nullptr && ch->isSleepingEnabled()) {
       suplaSrpc->sendChannelStateResult(0, ch->getChannelNumber());
-    }
-    ch = getSecondaryChannel();
+  }
+  ch = getSecondaryChannel();
+  if (ch != nullptr && ch->isSleepingEnabled()) {
+      suplaSrpc->sendChannelStateResult(0, ch->getChannelNumber());
   }
 }
 
 void Element::iterateAlways() {}
 
-bool Element::iterateConnected(void *srpc) {
+bool Element::iterateConnected(void *ptr) {
+  (void)(ptr);
+  return iterateConnected();
+}
+
+bool Element::iterateConnected() {
   bool response = true;
   uint64_t timestamp = millis();
   Channel *secondaryChannel = getSecondaryChannel();
   if (secondaryChannel && secondaryChannel->isUpdateReady() &&
       timestamp - secondaryChannel->lastCommunicationTimeMs > 100) {
     secondaryChannel->lastCommunicationTimeMs = timestamp;
-    secondaryChannel->sendUpdate(srpc);
+    secondaryChannel->sendUpdate();
     response = false;
   }
 
@@ -122,7 +128,7 @@ bool Element::iterateConnected(void *srpc) {
   if (channel && channel->isUpdateReady() &&
       timestamp - channel->lastCommunicationTimeMs > 100) {
     channel->lastCommunicationTimeMs = timestamp;
-    channel->sendUpdate(srpc);
+    channel->sendUpdate();
     response = false;
   }
   return response;
@@ -159,7 +165,24 @@ Channel *Element::getSecondaryChannel() {
 }
 
 void Element::handleGetChannelState(TDSC_ChannelState *channelState) {
-  (void)(channelState);
+  Channel *channel = getChannel();
+  while (channel) {
+    if (channelState->ChannelNumber == channel->getChannelNumber()) {
+      if (channel->isBatteryPowered()) {
+        channelState->Fields |= SUPLA_CHANNELSTATE_FIELD_BATTERYLEVEL
+          | SUPLA_CHANNELSTATE_FIELD_BATTERYPOWERED;
+
+        channelState->BatteryPowered = 1;
+        channelState->BatteryLevel = channel->getBatteryLevel();
+      }
+      return;
+    }
+    if (channel != getSecondaryChannel()) {
+      channel = getSecondaryChannel();
+    } else {
+      return;
+    }
+  }
   return;
 }
 

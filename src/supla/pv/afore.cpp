@@ -45,6 +45,7 @@ Afore::Afore(IPAddress ip, int port, const char *loginAndPass)
     len = LOGIN_AND_PASSOWORD_MAX_LENGTH;
   }
   strncpy(loginAndPassword, loginAndPass, len);
+  client = Supla::ClientBuilder();
 }
 
 void Afore::iterateAlways() {
@@ -115,7 +116,7 @@ void Afore::iterateAlways() {
   }
 }
 
-bool Afore::iterateConnected(void *srpc) {
+bool Afore::iterateConnected() {
   if (!dataFetchInProgress) {
     if (lastReadTime == 0 || millis() - lastReadTime > refreshRateSec * 1000) {
       lastReadTime = millis();
@@ -141,7 +142,7 @@ bool Afore::iterateConnected(void *srpc) {
       }
     }
   }
-  return Element::iterateConnected(srpc);
+  return Element::iterateConnected();
 }
 
 void Afore::readValuesFromDevice() {

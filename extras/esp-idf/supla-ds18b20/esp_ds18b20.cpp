@@ -24,8 +24,10 @@
 
 #include "esp_ds18b20.h"
 #include "supla/sensor/one_phase_electricity_meter.h"
+#include "supla/sensor/thermometer.h"
 
 void Supla::Sensor::DS18B20::onLoadConfig() {
+  Supla::Sensor::Thermometer::onLoadConfig();
   auto cfg = Supla::Storage::ConfigInstance();
   if (cfg) {
     char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
@@ -292,7 +294,7 @@ void Supla::Sensor::OneWireBus::addDsToList(Supla::Sensor::DS18B20 *ptr) {
 }
 
 void Supla::Sensor::DS18B20::iterateAlways() {
-  if (!myBus->lastReadTime || millis() - myBus->lastReadTime > 2000) {
+  if (!myBus->lastReadTime || millis() - myBus->lastReadTime > 10000) {
     myBus->requestTemperatures();
     myBus->lastReadTime = millis();
   }

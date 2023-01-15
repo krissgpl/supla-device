@@ -22,7 +22,22 @@
 #include <supla/events.h>
 #include <supla/actions.h>
 #include <supla/correction.h>
+#include <SuplaDevice.h>
+#include <supla/protocol/supla_srpc.h>
+#include <network_client_mock.h>
 
+class ChannelTestsFixture : public ::testing::Test {
+  protected:
+    virtual void SetUp() {
+      Supla::Channel::lastCommunicationTimeMs = 0;
+      memset(&(Supla::Channel::reg_dev), 0, sizeof(Supla::Channel::reg_dev));
+    }
+    virtual void TearDown() {
+      Supla::Channel::lastCommunicationTimeMs = 0;
+      memset(&(Supla::Channel::reg_dev), 0, sizeof(Supla::Channel::reg_dev));
+    }
+
+};
 
 class ActionHandlerMock : public Supla::ActionHandler {
  public:
@@ -275,7 +290,23 @@ TEST(ChannelTests, ChannelValueGetters) {
   EXPECT_EQ(channel.getValueBrightness(), bright);
 }
 
+class SuplaSrpcStub : public Supla::Protocol::SuplaSrpc {
+ public:
+  SuplaSrpcStub(SuplaDeviceClass *sdc) : Supla::Protocol::SuplaSrpc(sdc) {
+  }
+
+  void setRegisteredAndReady() {
+    registered = 1;
+  }
+};
+
 TEST(ChannelTests, SendUpdateTest) {
+  SuplaDeviceClass sd;
+  SuplaSrpcStub *suplaSrpc = nullptr;
+  new NetworkClientMock;  // it will be destroyed in
+                          // Supla::Protocol::SuplaSrpc
+  suplaSrpc = new SuplaSrpcStub(&sd);
+  suplaSrpc->setRegisteredAndReady();
   Supla::Channel channel;
   ::testing::InSequence seq;
   SrpcMock srpc;
@@ -287,11 +318,12 @@ TEST(ChannelTests, SendUpdateTest) {
   EXPECT_CALL(srpc, valueChanged(nullptr, 0, ElementsAreArray(array), 0, 0));
 
   EXPECT_FALSE(channel.isUpdateReady());
-  channel.sendUpdate(nullptr);
+  channel.sendUpdate();
   channel.setNewValue(true);
   EXPECT_TRUE(channel.isUpdateReady());
-  channel.sendUpdate(nullptr);
+  channel.sendUpdate();
   EXPECT_FALSE(channel.isUpdateReady());
+  delete suplaSrpc;
 }
 
 TEST(ChannelTests, BoolChannelWithLocalActions) {
@@ -460,19 +492,74 @@ TEST(ChannelTests, DoubleFloatChannelWithLocalActions) {
 TEST(ChannelTests, RgbwChannelWithLocalActions) {
   Supla::Channel ch1;
 
-  ::testing::InSequence seq;
   ActionHandlerMock mock1;
   ActionHandlerMock mock2;
   SrpcMock srpc;
 
-  int action1 = 11;
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_CHANGE, Supla::ON_CHANGE)).Times(6);
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_DIMMER_BRIGHTNESS_CHANGE,
+        Supla::ON_DIMMER_BRIGHTNESS_CHANGE)).Times(3);
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_COLOR_BRIGHTNESS_CHANGE,
+        Supla::ON_COLOR_BRIGHTNESS_CHANGE)).Times(2);
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_DIMMER_TURN_ON, Supla::ON_DIMMER_TURN_ON));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_COLOR_TURN_ON, Supla::ON_COLOR_TURN_ON));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_RED_TURN_ON, Supla::ON_RED_TURN_ON));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_GREEN_TURN_ON, Supla::ON_GREEN_TURN_ON));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_GREEN_TURN_OFF, Supla::ON_GREEN_TURN_OFF));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_BLUE_TURN_ON, Supla::ON_BLUE_TURN_ON));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_RED_CHANGE, Supla::ON_RED_CHANGE));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_RED_TURN_OFF, Supla::ON_RED_TURN_OFF));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_GREEN_CHANGE, Supla::ON_GREEN_CHANGE)).Times(3);
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_BLUE_CHANGE, Supla::ON_BLUE_CHANGE)).Times(2);
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_BLUE_TURN_OFF, Supla::ON_BLUE_TURN_OFF));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_TURN_ON, Supla::ON_TURN_ON));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_TURN_OFF, Supla::ON_TURN_OFF)).Times(2);
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_DIMMER_TURN_OFF, Supla::ON_DIMMER_TURN_OFF));
+  EXPECT_CALL(mock1,
+      handleAction(Supla::ON_COLOR_TURN_OFF, Supla::ON_COLOR_TURN_OFF));
 
-  EXPECT_CALL(mock1, handleAction(Supla::ON_CHANGE, action1));
-  EXPECT_CALL(mock1, handleAction(Supla::ON_CHANGE, action1));
-  EXPECT_CALL(mock1, handleAction(Supla::ON_CHANGE, action1));
   EXPECT_CALL(mock2, handleAction).Times(0);
 
-  ch1.addAction(action1, mock1, Supla::ON_CHANGE);
+  // We add action the same as event, just to keep it simpler to read. In
+  // real application events are not used as actions, but since those are
+  // just integers we can use them here.
+  ch1.addAction(Supla::ON_CHANGE, mock1, Supla::ON_CHANGE);
+  ch1.addAction(Supla::ON_DIMMER_TURN_ON, mock1, Supla::ON_DIMMER_TURN_ON);
+  ch1.addAction(Supla::ON_DIMMER_TURN_OFF, mock1, Supla::ON_DIMMER_TURN_OFF);
+  ch1.addAction(Supla::ON_DIMMER_BRIGHTNESS_CHANGE, mock1,
+      Supla::ON_DIMMER_BRIGHTNESS_CHANGE);
+  ch1.addAction(Supla::ON_COLOR_TURN_ON, mock1, Supla::ON_COLOR_TURN_ON);
+  ch1.addAction(Supla::ON_COLOR_TURN_OFF, mock1, Supla::ON_COLOR_TURN_OFF);
+  ch1.addAction(Supla::ON_COLOR_BRIGHTNESS_CHANGE, mock1,
+      Supla::ON_COLOR_BRIGHTNESS_CHANGE);
+  ch1.addAction(Supla::ON_RED_TURN_ON, mock1, Supla::ON_RED_TURN_ON);
+  ch1.addAction(Supla::ON_RED_TURN_OFF, mock1, Supla::ON_RED_TURN_OFF);
+  ch1.addAction(Supla::ON_RED_CHANGE, mock1, Supla::ON_RED_CHANGE);
+  ch1.addAction(Supla::ON_GREEN_TURN_ON, mock1, Supla::ON_GREEN_TURN_ON);
+  ch1.addAction(Supla::ON_GREEN_TURN_OFF, mock1, Supla::ON_GREEN_TURN_OFF);
+  ch1.addAction(Supla::ON_GREEN_CHANGE, mock1, Supla::ON_GREEN_CHANGE);
+  ch1.addAction(Supla::ON_BLUE_TURN_ON, mock1, Supla::ON_BLUE_TURN_ON);
+  ch1.addAction(Supla::ON_BLUE_TURN_OFF, mock1, Supla::ON_BLUE_TURN_OFF);
+  ch1.addAction(Supla::ON_BLUE_CHANGE, mock1, Supla::ON_BLUE_CHANGE);
+  ch1.addAction(Supla::ON_TURN_ON, mock1, Supla::ON_TURN_ON);
+  ch1.addAction(Supla::ON_TURN_OFF, mock1, Supla::ON_TURN_OFF);
 
   ch1.setNewValue(10, 20, 30, 90, 80);
   ch1.setNewValue(10, 20, 30, 90, 80);
@@ -480,6 +567,12 @@ TEST(ChannelTests, RgbwChannelWithLocalActions) {
   ch1.setNewValue(10, 21, 30, 90, 80);
   ch1.setNewValue(10, 20, 30, 90, 81);
   ch1.setNewValue(10, 20, 30, 90, 81);
+
+  ch1.setNewValue(10, 20, 0, 90, 81);
+
+  ch1.setNewValue(10, 20, 0, 90, 0);
+
+  ch1.setNewValue(10, 20, 0, 0, 0);
 }
 
 TEST(ChannelTests, SetNewValueWithCorrection) {
@@ -507,6 +600,78 @@ TEST(ChannelTests, SetNewValueWithCorrection) {
   channel2.setNewValue(pi, e);
   EXPECT_NEAR(channel2.getValueDoubleFirst(), pi, 0.001);
   EXPECT_NEAR(channel2.getValueDoubleSecond(), e + 2, 0.001); // value with correction
+
+  Supla::Correction::clear(); // cleanup
+}
+
+TEST_F(ChannelTestsFixture, SetNewTemperatureHumidityWithCorrection) {
+  Supla::Channel channel1;
+  Supla::Channel channel2;
+  Supla::Channel channel3;
+
+  channel1.setType(SUPLA_CHANNELTYPE_THERMOMETER);
+  channel2.setType(SUPLA_CHANNELTYPE_HUMIDITYANDTEMPSENSOR);
+  channel2.setType(SUPLA_CHANNELTYPE_HUMIDITYSENSOR);
+
+  EXPECT_DOUBLE_EQ(channel1.getValueDouble(), 0);
+
+  channel1.setNewValue(20.0);
+  EXPECT_DOUBLE_EQ(channel1.getValueDouble(), 20);
+
+  channel1.setCorrection(30.0);
+  EXPECT_DOUBLE_EQ(channel1.getValueDouble(), 20);
+
+  // Now correction should be applied
+  channel1.setNewValue(20.0);
+  EXPECT_DOUBLE_EQ(channel1.getValueDouble(), 20 + 30);
+
+  // correction shouldn't be applied invalid temperature magic value
+  channel1.setNewValue(-275.0);
+  EXPECT_DOUBLE_EQ(channel1.getValueDouble(), -275);
+
+  // channel 2 - temp+humi
+  channel2.setCorrection(10);
+  channel2.setCorrection(40, true);
+
+  channel2.setNewValue(20.0, 30.0);
+  EXPECT_NEAR(channel2.getValueDoubleFirst(), 30, 0.001);
+  EXPECT_NEAR(
+      channel2.getValueDoubleSecond(), 70, 0.001);  // value with correction
+
+  channel2.setNewValue(25.0, 80.0);
+  EXPECT_NEAR(channel2.getValueDoubleFirst(), 35, 0.001);
+  EXPECT_NEAR(
+      channel2.getValueDoubleSecond(), 100, 0.001); // value with correction
+                                                    // limitted to 100 %
+
+  channel2.setNewValue(-50.0, -1.0);
+  EXPECT_NEAR(channel2.getValueDoubleFirst(), -40, 0.001);
+  EXPECT_NEAR(
+      channel2.getValueDoubleSecond(), -1, 0.001); // no correctio
+
+  channel2.setNewValue(-275.0, -1.0);
+  EXPECT_NEAR(channel2.getValueDoubleFirst(), -275, 0.001);
+  EXPECT_NEAR(
+      channel2.getValueDoubleSecond(), -1, 0.001); // no correctio
+
+  // channel 3 - humidity
+  channel3.setCorrection(-40, true);
+
+  channel3.setNewValue(-275.0, 80.0);
+  EXPECT_NEAR(channel3.getValueDoubleFirst(), -275, 0.001);
+  EXPECT_NEAR(
+      channel3.getValueDoubleSecond(), 40, 0.001);  // value with correction
+
+  channel3.setNewValue(-275.0, 30.0);
+  EXPECT_NEAR(channel3.getValueDoubleFirst(), -275, 0.001);
+  EXPECT_NEAR(
+      channel3.getValueDoubleSecond(), 0, 0.001); // value with correction
+                                                    // limitted to 100 %
+  channel3.setNewValue(-275.0, 230.0);
+  EXPECT_NEAR(channel3.getValueDoubleFirst(), -275, 0.001);
+  EXPECT_NEAR(
+      channel3.getValueDoubleSecond(), 100, 0.001); // value with correction
+                                                    // limitted to 100 %
 
   Supla::Correction::clear(); // cleanup
 }

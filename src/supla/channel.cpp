@@ -48,12 +48,23 @@ Channel::Channel() : valueChanged(false), channelConfig(false),
 }
 
 Channel::~Channel() {
-  reg_dev.channel_count--;
+  if (reg_dev.channel_count != 0) {
+    reg_dev.channel_count--;
+  }
 }
 
 void Channel::setNewValue(double dbl) {
-  // Apply channel value correction
-  dbl += Correction::get(getChannelNumber());
+  bool skipCorrection = false;
+  if (getChannelType() == SUPLA_CHANNELTYPE_THERMOMETER) {
+    if (dbl <= -273) {
+      skipCorrection = true;
+    }
+  }
+
+  if (!skipCorrection) {
+    // Apply channel value correction
+    dbl += Correction::get(getChannelNumber());
+  }
 
   char newValue[SUPLA_CHANNELVALUE_SIZE];
   if (sizeof(double) == 8) {
@@ -70,9 +81,35 @@ void Channel::setNewValue(double dbl) {
 }
 
 void Channel::setNewValue(double temp, double humi) {
-  // Apply channel value corrections
-  temp += Correction::get(getChannelNumber());
-  humi += Correction::get(getChannelNumber(), true);
+  bool skipTempCorrection = false;
+  bool skipHumiCorrection = false;
+  if (getChannelType() == SUPLA_CHANNELTYPE_HUMIDITYANDTEMPSENSOR
+      || getChannelType() == SUPLA_CHANNELTYPE_HUMIDITYSENSOR) {
+    if (temp <= -273) {
+      skipTempCorrection = true;
+    }
+    if (humi < 0) {
+      skipHumiCorrection = true;
+    }
+  }
+
+  if (!skipTempCorrection) {
+    // Apply channel value corrections
+    temp += Correction::get(getChannelNumber());
+  }
+
+  if (!skipHumiCorrection) {
+    double humiCorr = Correction::get(getChannelNumber(), true);
+    humi += humiCorr;
+    if (humiCorr > 0.01 || humiCorr < -0.01) {
+      if (humi < 0) {
+        humi = 0;
+      }
+      if (humi > 100) {
+        humi = 100;
+      }
+    }
+  }
 
   char newValue[SUPLA_CHANNELVALUE_SIZE];
   _supla_int_t t = temp * 1000.00;
@@ -227,6 +264,13 @@ _supla_int_t Channel::getFuncList() {
   return 0;
 }
 
+_supla_int_t Channel::getFlags() {
+  if (channelNumber >= 0) {
+    return reg_dev.channels[channelNumber].Flags;
+  }
+  return 0;
+}
+
 void Channel::setActionTriggerCaps(_supla_int_t caps) {
   SUPLA_LOG_DEBUG("Channel[%d] setting func list: %d", channelNumber,
       caps);
@@ -245,28 +289,34 @@ void Channel::clearUpdateReady() {
   valueChanged = false;
 }
 
-void Channel::sendUpdate(void *srpc) {
+void Channel::sendUpdate() {
   if (valueChanged) {
     clearUpdateReady();
-    srpc_ds_async_channel_value_changed_c(
-        srpc, channelNumber, reg_dev.channels[channelNumber].value,
-        0, validityTimeSec);
+    for (auto proto = Supla::Protocol::ProtocolLayer::first();
+        proto != nullptr; proto = proto->next()) {
+      proto->sendChannelValueChanged(channelNumber,
+          reg_dev.channels[channelNumber].value,
+          0,
+          validityTimeSec);
+    }
 
     // returns null for non-extended channels
     TSuplaChannelExtendedValue *extValue = getExtValue();
     if (extValue) {
-      srpc_ds_async_channel_extendedvalue_changed(srpc, channelNumber,
-          extValue);
+      for (auto proto = Supla::Protocol::ProtocolLayer::first();
+          proto != nullptr; proto = proto->next()) {
+        proto->sendExtendedChannelValueChanged(channelNumber, extValue);
+      }
     }
   }
 
   // send channel config request if needed
   if (channelConfig) {
     channelConfig = false;
-    channelConfig = false;
-    TDS_GetChannelConfigRequest request = {};
-    request.ChannelNumber = getChannelNumber();
-    srpc_ds_async_get_channel_config(srpc, &request);
+    for (auto proto = Supla::Protocol::ProtocolLayer::first();
+        proto != nullptr; proto = proto->next()) {
+      proto->getChannelConfig(channelNumber);
+    }
   }
 }
 
@@ -274,12 +324,13 @@ TSuplaChannelExtendedValue *Channel::getExtValue() {
   return nullptr;
 }
 
+bool Channel::getExtValueAsElectricityMeter(
+      TElectricityMeter_ExtendedValue_V2 *out) {
+  return srpc_evtool_v2_extended2emextended(getExtValue(), out) == 1;
+}
+
 void Channel::setUpdateReady() {
   valueChanged = true;
-  for (auto proto = Supla::Protocol::ProtocolLayer::first(); proto != nullptr;
-       proto = proto->next()) {
-    proto->notifyChannelChange(channelNumber);
-  }
 }
 
 bool Channel::isUpdateReady() {
@@ -314,9 +365,103 @@ void Channel::setNewValue(uint8_t red,
   newValue[2] = blue;
   newValue[3] = green;
   newValue[4] = red;
+  auto prevBright = getValueBrightness();
+  auto prevColorBright = getValueColorBrightness();
+  auto prevRed = getValueRed();
+  auto prevGreen = getValueGreen();
+  auto prevBlue = getValueBlue();
   if (setNewValue(newValue)) {
     runAction(ON_CHANGE);
     runAction(ON_SECONDARY_CHANNEL_CHANGE);
+    bool sendTurnOn = false;
+    bool sendTurnOff = false;
+    if (prevBright == 0 && getValueBrightness() != 0) {
+      runAction(ON_DIMMER_TURN_ON);
+      sendTurnOn = true;
+    }
+    if (prevBright != 0 && getValueBrightness() == 0) {
+      runAction(ON_DIMMER_TURN_OFF);
+      sendTurnOff = true;
+    }
+    if (prevBright != getValueBrightness()) {
+      runAction(ON_DIMMER_BRIGHTNESS_CHANGE);
+    }
+    if (prevColorBright == 0 && getValueColorBrightness() != 0) {
+      runAction(ON_COLOR_TURN_ON);
+      if (getValueRed() != 0) {
+        runAction(ON_RED_TURN_ON);
+      }
+      if (getValueGreen() != 0) {
+        runAction(ON_GREEN_TURN_ON);
+      }
+      if (getValueBlue() != 0) {
+        runAction(ON_BLUE_TURN_ON);
+      }
+      sendTurnOn = true;
+    }
+    if (prevColorBright != 0 && getValueColorBrightness() == 0) {
+      runAction(ON_COLOR_TURN_OFF);
+      if (prevRed != 0) {
+        runAction(ON_RED_TURN_OFF);
+      }
+      if (prevGreen != 0) {
+        runAction(ON_GREEN_TURN_OFF);
+      }
+      if (prevBlue != 0) {
+        runAction(ON_BLUE_TURN_OFF);
+      }
+      sendTurnOff = true;
+    }
+    if (prevColorBright != getValueColorBrightness()) {
+      runAction(ON_COLOR_BRIGHTNESS_CHANGE);
+    }
+    if (prevRed == 0 && getValueRed() != 0 && prevColorBright != 0
+        && getValueColorBrightness() != 0) {
+      runAction(ON_RED_TURN_ON);
+    }
+    if (prevRed != 0 && getValueRed() == 0 && prevColorBright != 0
+        && getValueColorBrightness() != 0) {
+      runAction(ON_RED_TURN_OFF);
+    }
+
+    if (prevGreen == 0 && getValueGreen() != 0 && prevColorBright != 0
+        && getValueColorBrightness() != 0) {
+      runAction(ON_GREEN_TURN_ON);
+    }
+    if (prevGreen != 0 && getValueGreen() == 0 && prevColorBright != 0
+        && getValueColorBrightness() != 0) {
+      runAction(ON_GREEN_TURN_OFF);
+    }
+
+    if (prevBlue == 0 && getValueBlue() != 0 && prevColorBright != 0
+        && getValueColorBrightness() != 0) {
+      runAction(ON_BLUE_TURN_ON);
+    }
+    if (prevBlue != 0 && getValueBlue() == 0 && prevColorBright != 0
+        && getValueColorBrightness() != 0) {
+      runAction(ON_BLUE_TURN_OFF);
+    }
+
+    if (prevRed != getValueRed()) {
+      runAction(ON_RED_CHANGE);
+    }
+
+    if (prevGreen != getValueGreen()) {
+      runAction(ON_GREEN_CHANGE);
+    }
+
+    if (prevBlue != getValueBlue()) {
+      runAction(ON_BLUE_CHANGE);
+    }
+
+    if (sendTurnOn) {
+      runAction(ON_TURN_ON);
+    }
+
+    if (sendTurnOff) {
+      runAction(ON_TURN_OFF);
+    }
+
     SUPLA_LOG_DEBUG(
         "Channel(%d) value changed to RGB(%d, %d, %d), colBr(%d), bright(%d)",
         channelNumber, red, green, blue, colorBrightness, brightness);
@@ -406,6 +551,21 @@ void Channel::setCorrection(double correction, bool forSecondaryValue) {
 
 void Channel::requestChannelConfig() {
   channelConfig = true;
+}
+
+bool Channel::isBatteryPowered() {
+  return (batteryLevel <= 100);
+}
+
+unsigned char Channel::getBatteryLevel() {
+  if (isBatteryPowered()) {
+    return batteryLevel;
+  }
+  return 255;
+}
+
+void Channel::setBatteryLevel(unsigned char level) {
+  batteryLevel = level;
 }
 
 };  // namespace Supla

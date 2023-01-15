@@ -283,8 +283,17 @@ int strncmpInsensitive(const char *s1, const char *s2, int size) {
 // 10 raised to the power of decLimit, so if decLimit == 2 then "3.1415" -> 314
 int32_t floatStringToInt(const char *str, int precision) {
   int32_t result = 0;
+  bool minusFound = false;
   int decimalPlaces = -1;
   for (int i = 0; str[i] != 0; i++) {
+    if (str[i] == '-') {
+      if (i == 0) {
+        minusFound = true;
+        continue;
+      } else {
+        return 0;
+      }
+    }
     if (str[i] >= '0' && str[i] <= '9') {
       result = result * 10 + str[i] - '0';
       if (decimalPlaces >= 0) {
@@ -307,16 +316,16 @@ int32_t floatStringToInt(const char *str, int precision) {
     decimalPlaces++;
   }
 
-  return result;
+  return minusFound ? -result : result;
 }
 
 const char *getManufacturer(int16_t id) {
   switch (id) {
     case SUPLA_MFR_ACSOFTWARE: {
-      return "AC Software";
+      return "AC SOFTWARE";
     }
     case SUPLA_MFR_TRANSCOM: {
-      return "Transcom";
+      return "TransCom";
     }
     case SUPLA_MFR_LOGI: {
       return "Logi";
@@ -328,10 +337,10 @@ const char *getManufacturer(int16_t id) {
       return "Nice";
     }
     case SUPLA_MFR_ITEAD: {
-      return "ITEAD";
+      return "Itead";
     }
     case SUPLA_MFR_DOYLETRATT: {
-      return "Varilight";
+      return "Doyle & Tratt";
     }
     case SUPLA_MFR_HEATPOL: {
       return "Heatpol";
@@ -346,7 +355,7 @@ const char *getManufacturer(int16_t id) {
       return "Wekta";
     }
     case SUPLA_MFR_STA_SYSTEM: {
-      return "STA System";
+      return "STA-System";
     }
     case SUPLA_MFR_DGF: {
       return "DGF";

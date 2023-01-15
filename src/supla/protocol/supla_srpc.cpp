@@ -33,6 +33,7 @@ Supla::Protocol::SuplaSrpc::SuplaSrpc(SuplaDeviceClass *sdc, int version)
     : Supla::Protocol::ProtocolLayer(sdc), version(version) {
   client = Supla::ClientBuilder();
   client->setDebugLogs(true);
+  client->setSdc(sdc);
 }
 
 Supla::Protocol::SuplaSrpc::~SuplaSrpc() {
@@ -56,6 +57,7 @@ bool Supla::Protocol::SuplaSrpc::onLoadConfig() {
     memset(buf, 0, sizeof(buf));
     if (cfg->getSuplaServer(buf) && strlen(buf) > 0) {
       sdc->setServer(buf);
+      configEmpty = false;
     } else {
       SUPLA_LOG_INFO("Config incomplete: missing server");
       configComplete = false;
@@ -65,80 +67,69 @@ bool Supla::Protocol::SuplaSrpc::onLoadConfig() {
     memset(buf, 0, sizeof(buf));
     if (cfg->getEmail(buf) && strlen(buf) > 0) {
       sdc->setEmail(buf);
+      configEmpty = false;
     } else {
       SUPLA_LOG_INFO("Config incomplete: missing email");
       configComplete = false;
     }
 
-    bool usePublicServer = false;
-    if (Supla::Channel::reg_dev.ServerName[0] != '\0') {
-      const int serverLength = strlen(Supla::Channel::reg_dev.ServerName);
-      const char suplaPublicServerSuffix[] = ".supla.org";
-      const int suplaPublicServerSuffixLength = strlen(suplaPublicServerSuffix);
+    if (port == 2016 ||
+        (port == -1 && Supla::Network::IsSuplaSSLEnabled())) {
+      client->setSSLEnabled(true);
+      bool usePublicServer = isSuplaPublicServerConfigured();
+      auto certificate = suplaCACert;
 
-      if (serverLength > suplaPublicServerSuffixLength) {
-        if (strncmpInsensitive(Supla::Channel::reg_dev.ServerName +
-                                   serverLength - suplaPublicServerSuffixLength,
-                               suplaPublicServerSuffix,
-                               suplaPublicServerSuffixLength) == 0) {
-          usePublicServer = true;
-        }
+      // Public Supla server use different root CA for server certificate
+      // validation then CA used for private servers
+      if (!usePublicServer) {
+        certificate = supla3rdPartyCACert;
       }
-    }
 
-    // Public Supla server use different root CA for server certificate
-    // validation then CA used for private servers
-    if (!usePublicServer) {
-      suplaCACert = supla3rdPartyCACert;
-    }
-
-    cfg->getUInt8("security_level", &securityLevel);
-    if (securityLevel > 2) {
-      securityLevel = 0;
-    }
-
-    client->setSSLEnabled(true);
-    SUPLA_LOG_DEBUG("Security level: %d", securityLevel);
-    switch (securityLevel) {
-      default:
-      case 0: {
-        // in case of default security level it is required to use Supla CA
-        // certificate. It should be set on application level before
-        // SuplaDevice.begin() is called.
-        // If it is null, we just assign "SUPLA" as a certificate value, which
-        // will of course fail the certificate validation (which is intended).
-        if (suplaCACert == nullptr) {
-          SUPLA_LOG_ERROR(
-              "Supla CA ceritificate is selected, but it is not set. "
-              "Connection will fail");
-          auto cert = new char[6];
-          strncpy(cert, "SUPLA", 6);  // Some dummy value for CA cert
-          suplaCACert = cert;
-        }
-        client->setCACert(suplaCACert);
-        break;
+      cfg->getUInt8("security_level", &securityLevel);
+      if (securityLevel > 2) {
+        securityLevel = 0;
       }
-      case 1: {
-        // custom CA from Config
-        int len = cfg->getCustomCASize();
-        if (len > 0) {
-          len++;
-          auto cert = new char[len];
-          cfg->getCustomCA(cert, len);
-          client->setCACert(cert);
-        } else {
-          SUPLA_LOG_ERROR(
-              "Custom CA is selected, but certificate is"
-              " missing in config. Connect will fail");
-          auto cert = new char[6];
-          strncpy(cert, "SUPLA", 6);  // some dummy value
-          client->setCACert(cert);
+
+      SUPLA_LOG_DEBUG("Security level: %d", securityLevel);
+      static const char wrongCert[] = "SUPLA";
+      switch (securityLevel) {
+        default:
+        case 0: {
+          // in case of default security level it is required to use Supla CA
+          // certificate. It should be set on application level before
+          // SuplaDevice.begin() is called.
+          // If it is null, we just assign "SUPLA" as a certificate value, which
+          // will of course fail the certificate validation (which is intended).
+          if (certificate == nullptr) {
+            SUPLA_LOG_ERROR(
+                "Supla CA ceritificate is selected, but it is not set. "
+                "Connection will fail");
+            certificate = wrongCert;
+          }
+          client->setCACert(certificate);
+          break;
         }
-        break;
-      }
-      case 2: {
-        // Skip certificate validation (INSECURE)
-        break;
+        case 1: {
+          // custom CA from Config
+          int len = cfg->getCustomCASize();
+          if (len > 0) {
+            len++;
+            auto cert = new char[len];
+            memset(cert, 0, len);
+            cfg->getCustomCA(cert, len);
+            client->setCACert(cert);
+          } else {
+            SUPLA_LOG_ERROR(
+                "Custom CA is selected, but certificate is"
+                " missing in config. Connect will fail");
+            client->setCACert(wrongCert);
+          }
+          break;
+        }
+        case 2: {
+          // Skip certificate validation (INSECURE)
+          break;
+        }
       }
     }
   } else {
@@ -151,6 +142,32 @@ bool Supla::Protocol::SuplaSrpc::onLoadConfig() {
 void Supla::Protocol::SuplaSrpc::onInit() {
   if (!isEnabled()) {
     return;
+  }
+
+  if (port == 2016 ||
+      (port == -1 && Supla::Network::IsSuplaSSLEnabled())) {
+    client->setSSLEnabled(true);
+
+    auto cfg = Supla::Storage::ConfigInstance();
+
+    if (!cfg && (suplaCACert != nullptr || supla3rdPartyCACert != nullptr)) {
+      auto certificate = suplaCACert;
+      if (suplaCACert != nullptr && supla3rdPartyCACert != nullptr) {
+        bool usePublicServer = isSuplaPublicServerConfigured();
+
+        // Public Supla server use different root CA for server certificate
+        // validation then CA used for private servers
+        if (!usePublicServer) {
+          certificate = supla3rdPartyCACert;
+        }
+      }
+
+      if (suplaCACert == nullptr) {
+        certificate = supla3rdPartyCACert;
+      }
+
+      client->setCACert(certificate);
+    }
   }
 
   TsrpcParams srpcParams;
@@ -180,7 +197,7 @@ _supla_int_t Supla::dataRead(void *buf, _supla_int_t count, void *userParams) {
 _supla_int_t Supla::dataWrite(void *buf, _supla_int_t count, void *userParams) {
   auto srpcLayer = reinterpret_cast<Supla::Protocol::SuplaSrpc *>(userParams);
   _supla_int_t r =
-      srpcLayer->client->write(reinterpret_cast<uint8_t *>(buf), count);
+    srpcLayer->client->write(reinterpret_cast<uint8_t *>(buf), count);
   if (r > 0) {
     srpcLayer->updateLastSentTime();
   }
@@ -188,10 +205,10 @@ _supla_int_t Supla::dataWrite(void *buf, _supla_int_t count, void *userParams) {
 }
 
 void Supla::messageReceived(void *srpc,
-                            unsigned _supla_int_t rrId,
-                            unsigned _supla_int_t callType,
-                            void *userParam,
-                            unsigned char protoVersion) {
+    unsigned _supla_int_t rrId,
+    unsigned _supla_int_t callType,
+    void *userParam,
+    unsigned char protoVersion) {
   (void)(rrId);
   (void)(callType);
   (void)(protoVersion);
@@ -199,7 +216,7 @@ void Supla::messageReceived(void *srpc,
   int8_t getDataResult;
 
   Supla::Protocol::SuplaSrpc *suplaSrpc =
-      reinterpret_cast<Supla::Protocol::SuplaSrpc *>(userParam);
+    reinterpret_cast<Supla::Protocol::SuplaSrpc *>(userParam);
 
   suplaSrpc->updateLastResponseTime();
 
@@ -216,7 +233,7 @@ void Supla::messageReceived(void *srpc,
             rd.data.sd_channel_new_value->ChannelNumber);
         if (element) {
           int actionResult =
-              element->handleNewValueFromServer(rd.data.sd_channel_new_value);
+            element->handleNewValueFromServer(rd.data.sd_channel_new_value);
           if (actionResult != -1) {
             srpc_ds_async_set_channel_result(
                 srpc,
@@ -265,25 +282,21 @@ void Supla::messageReceived(void *srpc,
             rd.data.sd_device_calcfg_request->DataType,
             rd.data.sd_device_calcfg_request->DataSize);
 
-        if (rd.data.sd_device_calcfg_request->SuperUserAuthorized != 1) {
-          result.Result = SUPLA_CALCFG_RESULT_UNAUTHORIZED;
+        if (rd.data.sd_device_calcfg_request->ChannelNumber == -1) {
+          // calcfg with channel == -1 are for whole device, so we route
+          // it to SuplaDeviceClass instance
+          result.Result = suplaSrpc->getSdc()->handleCalcfgFromServer(
+              rd.data.sd_device_calcfg_request);
         } else {
-          if (rd.data.sd_device_calcfg_request->ChannelNumber == -1) {
-            // calcfg with channel == -1 are for whole device, so we route
-            // it to SuplaDeviceClass instance
-            result.Result = suplaSrpc->getSdc()->handleCalcfgFromServer(
+          auto element = Supla::Element::getElementByChannelNumber(
+              rd.data.sd_device_calcfg_request->ChannelNumber);
+          if (element) {
+            result.Result = element->handleCalcfgFromServer(
                 rd.data.sd_device_calcfg_request);
           } else {
-            auto element = Supla::Element::getElementByChannelNumber(
-                rd.data.sd_device_calcfg_request->ChannelNumber);
-            if (element) {
-              result.Result = element->handleCalcfgFromServer(
-                  rd.data.sd_device_calcfg_request);
-            } else {
-              SUPLA_LOG_ERROR(
-                  "Error: couldn't find element for a requested channel [%d]",
-                  rd.data.sd_channel_new_value->ChannelNumber);
-            }
+            SUPLA_LOG_ERROR(
+                "Error: couldn't find element for a requested channel [%d]",
+                rd.data.sd_channel_new_value->ChannelNumber);
           }
         }
         srpc_ds_async_device_calcfg_result(srpc, &result);
@@ -480,14 +493,14 @@ bool Supla::Protocol::SuplaSrpc::ping() {
   return true;
 }
 
-void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
+bool Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
   if (!isEnabled()) {
-    return;
+    return false;
   }
 
   requestNetworkRestart = false;
   if (waitForIterate != 0 && _millis - lastIterateTime < waitForIterate) {
-    return;
+    return false;
   }
 
   waitForIterate = 0;
@@ -504,8 +517,11 @@ void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
         SUPLA_LASTCONNECTIONRESETCAUSE_SERVER_CONNECTION_LOST);
     registered = 0;
     if (port == -1) {
-      // TODO(klew): add ssl handling
-      port = 2015;
+      if (Supla::Network::IsSuplaSSLEnabled()) {
+        port = 2016;
+      } else {
+        port = 2015;
+      }
     }
     int result = client->connect(Supla::Channel::reg_dev.ServerName, port);
     if (1 == result) {
@@ -525,7 +541,7 @@ void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
       if (connectionFailCounter % 6 == 0) {
         requestNetworkRestart = true;
       }
-      return;
+      return false;
     }
   }
 
@@ -535,7 +551,7 @@ void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
 
     lastIterateTime = _millis;
     waitForIterate = 5000;
-    return;
+    return false;
   }
 
   if (registered == 0) {
@@ -545,7 +561,7 @@ void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
     if (!srpc_ds_async_registerdevice_e(srpc, &Supla::Channel::reg_dev)) {
       SUPLA_LOG_WARNING("Fatal SRPC failure!");
     }
-    return;
+    return false;
   } else if (registered == -1) {
     // Handle registration timeout (in case of no reply received)
     if (_millis - lastIterateTime > 10 * 1000) {
@@ -557,7 +573,7 @@ void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
       lastIterateTime = _millis;
       waitForIterate = 2000;
     }
-    return;
+    return false;
   } else if (registered == 1) {
     // Device is registered and everything is correct
 
@@ -569,22 +585,14 @@ void Supla::Protocol::SuplaSrpc::iterate(uint64_t _millis) {
       disconnect();
     }
 
-    // Iterate all elements
-    for (auto element = Supla::Element::begin(); element != nullptr;
-         element = element->next()) {
-      if (!element->iterateConnected(srpc)) {
-        break;
-      }
-      delay(0);
-    }
-    return;
+    return true;
   } else if (registered == 2) {
     // Server rejected registration
     registered = 0;
     lastIterateTime = millis();
     waitForIterate = 10000;
   }
-  return;
+  return false;
 }
 
 void Supla::Protocol::SuplaSrpc::disconnect() {
@@ -618,6 +626,14 @@ void Supla::Protocol::SuplaSrpc::setSuplaCACert(const char *cert) {
 
 void Supla::Protocol::SuplaSrpc::setSupla3rdPartyCACert(const char *cert) {
   supla3rdPartyCACert = cert;
+}
+
+const char* Supla::Protocol::SuplaSrpc::getSuplaCACert() {
+  return suplaCACert;
+}
+
+const char* Supla::Protocol::SuplaSrpc::getSupla3rdPartyCACert() {
+  return supla3rdPartyCACert;
 }
 
 void Supla::Protocol::SuplaSrpc::onGetUserLocaltimeResult(
@@ -690,4 +706,79 @@ uint32_t Supla::Protocol::SuplaSrpc::getActivityTimeout() {
 
 bool Supla::Protocol::SuplaSrpc::isUpdatePending() {
   return Supla::Element::IsAnyUpdatePending();
+}
+
+bool Supla::Protocol::SuplaSrpc::isSuplaPublicServerConfigured() {
+  if (Supla::Channel::reg_dev.ServerName[0] != '\0') {
+    const int serverLength = strlen(Supla::Channel::reg_dev.ServerName);
+    const char suplaPublicServerSuffix[] = ".supla.org";
+    const int suplaPublicServerSuffixLength =
+      strlen(suplaPublicServerSuffix);
+
+    if (serverLength > suplaPublicServerSuffixLength) {
+      if (strncmpInsensitive(Supla::Channel::reg_dev.ServerName +
+            serverLength - suplaPublicServerSuffixLength,
+            suplaPublicServerSuffix,
+            suplaPublicServerSuffixLength) == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool Supla::Protocol::SuplaSrpc::isRegisteredAndReady() {
+  return registered == 1;
+}
+
+void Supla::Protocol::SuplaSrpc::sendActionTrigger(
+    uint8_t channelNumber, uint32_t actionId) {
+  if (!isRegisteredAndReady()) {
+    return;
+  }
+
+  TDS_ActionTrigger at = {};
+  at.ChannelNumber = channelNumber;
+  at.ActionTrigger = actionId;
+
+  srpc_ds_async_action_trigger(srpc, &at);
+}
+
+void Supla::Protocol::SuplaSrpc::getUserLocaltime() {
+  if (!isRegisteredAndReady()) {
+    return;
+  }
+
+  srpc_dcs_async_get_user_localtime(srpc);
+}
+
+void Supla::Protocol::SuplaSrpc::sendChannelValueChanged(
+    uint8_t channelNumber,
+    char *value,
+    unsigned char offline,
+    uint32_t validityTimeSec) {
+  if (!isRegisteredAndReady()) {
+    return;
+  }
+  srpc_ds_async_channel_value_changed_c(srpc, channelNumber, value,
+      offline, validityTimeSec);
+}
+
+void Supla::Protocol::SuplaSrpc::sendExtendedChannelValueChanged(
+    uint8_t channelNumber,
+    TSuplaChannelExtendedValue *value) {
+  if (!isRegisteredAndReady()) {
+    return;
+  }
+  srpc_ds_async_channel_extendedvalue_changed(srpc, channelNumber,
+      value);
+}
+
+void Supla::Protocol::SuplaSrpc::getChannelConfig(uint8_t channelNumber) {
+  if (!isRegisteredAndReady()) {
+    return;
+  }
+  TDS_GetChannelConfigRequest request = {};
+  request.ChannelNumber = channelNumber;
+  srpc_ds_async_get_channel_config(srpc, &request);
 }

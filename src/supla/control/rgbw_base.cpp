@@ -45,17 +45,14 @@ RGBWBase::RGBWBase()
       lastBrightness(100),
       defaultDimmedBrightness(20),
       dimIterationDirection(false),
-      iterationDelayCounter(0),
       fadeEffect(500),
       hwRed(-1),
       hwGreen(0),
       hwBlue(0),
       hwColorBrightness(0),
       hwBrightness(0),
-      lastTick(0),
-      lastMsgReceivedMs(0),
       stateOnInit(RGBW_STATE_ON_INIT_RESTORE),
-      minIterationBrightness(5) {
+      minIterationBrightness(1) {
   channel.setType(SUPLA_CHANNELTYPE_DIMMERANDRGBLED);
   channel.setDefault(SUPLA_CHANNELFNC_DIMMERANDRGBLIGHTING);
 }
@@ -106,7 +103,7 @@ void RGBWBase::setRGBW(int red,
 }
 
 void RGBWBase::iterateAlways() {
-  if (lastMsgReceivedMs != 0 && millis() - lastMsgReceivedMs > 400) {
+  if (lastMsgReceivedMs != 0 && millis() - lastMsgReceivedMs >= 400) {
     lastMsgReceivedMs = 0;
     // Send to Supla server new values
     channel.setNewValue(
@@ -287,21 +284,46 @@ void RGBWBase::iterateDimmerRGBW(int rgbStep, int wStep) {
   if (rgbStep > 0 && wStep > 0) {
     curBrightness = curColorBrightness;
   }
+
+  // change iteration direction if there was no action in last 0.5 s
+  if (millis() - lastIterateDimmerTimestamp >= 500) {
+    dimIterationDirection = !dimIterationDirection;
+    iterationDelayTimestamp = 0;
+    if (curBrightness <= 5) {
+      dimIterationDirection = false;
+    } else if (curBrightness >= 95) {
+      dimIterationDirection = true;
+    }
+    if (millis() - lastIterateDimmerTimestamp >= 10000) {
+      if (curBrightness <= 40) {
+        dimIterationDirection = false;
+      } else if (curBrightness >= 60) {
+        dimIterationDirection = true;
+      }
+    }
+  }
+
+  lastIterateDimmerTimestamp = millis();
+
   if (rgbStep > 0) {
     if (curColorBrightness <= minIterationBrightness &&
         dimIterationDirection == true) {
-      iterationDelayCounter++;
-      if (iterationDelayCounter == 5) {
+      if (iterationDelayTimestamp == 0) {
+        iterationDelayTimestamp = millis();
+      }
+      if (millis() - iterationDelayTimestamp > minMaxIterationDelay) {
         dimIterationDirection = false;
-        iterationDelayCounter = 0;
+        iterationDelayTimestamp = 0;
       } else {
         return;
       }
     } else if (curColorBrightness == 100 && dimIterationDirection == false) {
-      iterationDelayCounter++;
-      if (iterationDelayCounter == 5) {
+      if (iterationDelayTimestamp == 0) {
+        iterationDelayTimestamp = millis();
+      }
+      if (millis() - iterationDelayTimestamp > minMaxIterationDelay) {
         dimIterationDirection = true;
-        iterationDelayCounter = 0;
+        iterationDelayTimestamp = 0;
       } else {
         return;
       }
@@ -309,24 +331,28 @@ void RGBWBase::iterateDimmerRGBW(int rgbStep, int wStep) {
   } else if (wStep > 0) {
     if (curBrightness <= minIterationBrightness &&
         dimIterationDirection == true) {
-      iterationDelayCounter++;
-      if (iterationDelayCounter == 5) {
+      if (iterationDelayTimestamp == 0) {
+        iterationDelayTimestamp = millis();
+      }
+      if (millis() - iterationDelayTimestamp > minMaxIterationDelay) {
         dimIterationDirection = false;
-        iterationDelayCounter = 0;
+        iterationDelayTimestamp = 0;
       } else {
         return;
       }
     } else if (curBrightness == 100 && dimIterationDirection == false) {
-      iterationDelayCounter++;
-      if (iterationDelayCounter == 5) {
+      if (iterationDelayTimestamp == 0) {
+        iterationDelayTimestamp = millis();
+      }
+      if (millis() - iterationDelayTimestamp > minMaxIterationDelay) {
         dimIterationDirection = true;
-        iterationDelayCounter = 0;
+        iterationDelayTimestamp = 0;
       } else {
         return;
       }
     }
   }
-  iterationDelayCounter = 0;
+  iterationDelayTimestamp = 0;
 
   // If direction is dim, then brightness step is set to negative
   if (dimIterationDirection) {
@@ -334,11 +360,17 @@ void RGBWBase::iterateDimmerRGBW(int rgbStep, int wStep) {
     wStep = -wStep;
   }
 
-  if (curColorBrightness + rgbStep < minIterationBrightness) {
-    rgbStep = curColorBrightness - minIterationBrightness;
+  if (rgbStep && curColorBrightness + rgbStep < minIterationBrightness) {
+    rgbStep = minIterationBrightness - curColorBrightness;
   }
-  if (curBrightness + wStep < minIterationBrightness) {
-    wStep = curBrightness - minIterationBrightness;
+  if (wStep && curBrightness + wStep < minIterationBrightness) {
+    wStep = minIterationBrightness - curBrightness;
+  }
+
+  if ((wStep != 0 && curBrightness == 0)
+      || (rgbStep != 0 && curColorBrightness == 0)) {
+    iterationDelayTimestamp = millis();
+    dimIterationDirection = true;
   }
 
   setRGBW(-1,
@@ -531,6 +563,11 @@ RGBWBase &RGBWBase::setDefaultStateRestore() {
 void RGBWBase::setMinIterationBrightness(uint8_t minBright) {
   minIterationBrightness = minBright;
 }
+
+void RGBWBase::setMinMaxIterationDelay(uint16_t delayMs) {
+  minMaxIterationDelay = delayMs;
+}
+
 
 RGBWBase &RGBWBase::setBrightnessLimits(int min, int max) {
   if (min < 0) {

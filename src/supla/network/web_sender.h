@@ -27,7 +27,11 @@ class WebSender {
  public:
   virtual ~WebSender();
   virtual void send(const char*, int size = -1) = 0;
+  virtual void sendSafe(const char*, int size = -1);
   virtual void send(int number);
+  virtual void send(int number, int precision);
+  virtual void sendNameAndId(const char *id);
+  virtual void sendLabelFor(const char *id, const char *label);
 };
 };  // namespace Supla
 
