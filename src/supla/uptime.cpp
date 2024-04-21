@@ -15,23 +15,27 @@
 */
 
 #include "uptime.h"
+#include <supla/log_wrapper.h>
 
-namespace Supla {
+using Supla::Uptime;
 
-Uptime::Uptime()
-    : lastMillis(0),
-      deviceUptime(0),
-      connectionUptime(0),
-      lastConnectionResetCause(SUPLA_LASTCONNECTIONRESETCAUSE_UNKNOWN),
-      acceptConnectionLostCause(false) {
+Uptime::Uptime() {
 }
 
-void Uptime::iterate(uint64_t millis) {
-  int seconds = (millis - lastMillis) / 1000;
-  if (seconds > 0) {
-    lastMillis = millis - ((millis - lastMillis) % 1000);
-    deviceUptime += seconds;
-    connectionUptime += seconds;
+void Uptime::iterate(uint32_t millis) {
+  uint32_t timediff = millis - lastMillis;
+
+  // 1 hour - failsafe in case of millis going back in time
+  if (timediff > 3600000) {
+     SUPLA_LOG_WARNING("Uptime calculation problem! %d %d", millis, lastMillis);
+     lastMillis = millis;
+     return;
+  }
+  while (timediff >= 1000) {
+    deviceUptime++;
+    connectionUptime++;
+    timediff -= 1000;
+    lastMillis += 1000;
   }
 }
 
@@ -40,24 +44,21 @@ void Uptime::resetConnectionUptime() {
   acceptConnectionLostCause = true;
 }
 
-void Uptime::setConnectionLostCause(unsigned char cause) {
+void Uptime::setConnectionLostCause(uint8_t cause) {
   if (acceptConnectionLostCause) {
     lastConnectionResetCause = cause;
     acceptConnectionLostCause = false;
   }
 }
 
-unsigned _supla_int_t Uptime::getUptime() {
+uint32_t Uptime::getUptime() const {
   return deviceUptime;
 }
 
-unsigned _supla_int_t Uptime::getConnectionUptime() {
+uint32_t Uptime::getConnectionUptime() const {
   return connectionUptime;
 }
 
-unsigned char Uptime::getLastResetCause() {
+uint8_t Uptime::getLastResetCause() const {
   return lastConnectionResetCause;
 }
-
-
-};  // namespace Supla

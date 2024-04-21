@@ -21,6 +21,7 @@
 #include <supla/element.h>
 #include <supla/channel_element.h>
 #include <supla/sensor/electricity_meter.h>
+#include <simple_time.h>
 
 using ::testing::_;
 using ::testing::ElementsAreArray;
@@ -28,6 +29,7 @@ using ::testing::Args;
 using ::testing::ElementsAre;
 
 TEST(EmGetterTests, VoltageGetter) {
+  SimpleTime time;
   auto getter = EmVoltage();
 
   bool isValid = true;
@@ -76,6 +78,7 @@ TEST(EmGetterTests, VoltageGetter) {
 }
 
 TEST(EmGetterTests, CurrentGetter) {
+  SimpleTime time;
   auto getter = EmCurrent();
 
   bool isValid = true;
@@ -124,6 +127,7 @@ TEST(EmGetterTests, CurrentGetter) {
 }
 
 TEST(EmGetterTests, TotalCurrentGetter) {
+  SimpleTime time;
   auto getter = EmTotalCurrent();
 
   bool isValid = true;
@@ -166,6 +170,7 @@ TEST(EmGetterTests, TotalCurrentGetter) {
 }
 
 TEST(EmGetterTests, PowerActiveWGetter) {
+  SimpleTime time;
   auto getter = EmPowerActiveW();
 
   bool isValid = true;
@@ -183,11 +188,13 @@ TEST(EmGetterTests, PowerActiveWGetter) {
   EXPECT_FALSE(isValid);
 
   Supla::Sensor::ElectricityMeter em;
+  // current is set, so EM considers that we have measurements
+  em.setCurrent(0, 12 * 1000);
   isValid = true;
   EXPECT_EQ(getter->getValue(&em, &isValid), 0.0);
   EXPECT_FALSE(isValid);
 
-  em.setPowerActive(0, 300 * 100000); // 300 W
+  em.setPowerActive(0, 300 * 100000);  // 300 W
   em.updateChannelValues();
   EXPECT_NEAR(getter->getValue(&em, &isValid), 300.0, 0.005);
   EXPECT_TRUE(isValid);
@@ -214,6 +221,7 @@ TEST(EmGetterTests, PowerActiveWGetter) {
 }
 
 TEST(EmGetterTests, TotalPowerActiveWGetter) {
+  SimpleTime time;
   auto getter = EmTotalPowerActiveW();
 
   bool isValid = true;
@@ -231,6 +239,8 @@ TEST(EmGetterTests, TotalPowerActiveWGetter) {
   EXPECT_FALSE(isValid);
 
   Supla::Sensor::ElectricityMeter em;
+  // current is set, so EM considers that we have measurements
+  em.setCurrent(0, 12 * 1000);
   isValid = true;
   EXPECT_EQ(getter->getValue(&em, &isValid), 0.0);
   EXPECT_FALSE(isValid);
@@ -256,6 +266,7 @@ TEST(EmGetterTests, TotalPowerActiveWGetter) {
 }
 
 TEST(EmGetterTests, PowerApparentGetter) {
+  SimpleTime time;
   auto getter = EmPowerApparentVA();
 
   bool isValid = true;
@@ -273,6 +284,8 @@ TEST(EmGetterTests, PowerApparentGetter) {
   EXPECT_FALSE(isValid);
 
   Supla::Sensor::ElectricityMeter em;
+  // current is set, so EM considers that we have measurements
+  em.setCurrent(0, 12 * 1000);
   isValid = true;
   EXPECT_EQ(getter->getValue(&em, &isValid), 0.0);
   EXPECT_FALSE(isValid);
@@ -304,6 +317,7 @@ TEST(EmGetterTests, PowerApparentGetter) {
 }
 
 TEST(EmGetterTests, TotalPowerApparentGetter) {
+  SimpleTime time;
   auto getter = EmTotalPowerApparentVA();
 
   bool isValid = true;
@@ -321,6 +335,8 @@ TEST(EmGetterTests, TotalPowerApparentGetter) {
   EXPECT_FALSE(isValid);
 
   Supla::Sensor::ElectricityMeter em;
+  // current is set, so EM considers that we have measurements
+  em.setCurrent(0, 12 * 1000);
   isValid = true;
   EXPECT_EQ(getter->getValue(&em, &isValid), 0.0);
   EXPECT_FALSE(isValid);
@@ -346,6 +362,7 @@ TEST(EmGetterTests, TotalPowerApparentGetter) {
 }
 
 TEST(EmGetterTests, PowerReactiveGetter) {
+  SimpleTime time;
   auto getter = EmPowerReactiveVar();
 
   bool isValid = true;
@@ -363,6 +380,8 @@ TEST(EmGetterTests, PowerReactiveGetter) {
   EXPECT_FALSE(isValid);
 
   Supla::Sensor::ElectricityMeter em;
+  // current is set, so EM considers that we have measurements
+  em.setCurrent(0, 12 * 1000);
   isValid = true;
   EXPECT_EQ(getter->getValue(&em, &isValid), 0.0);
   EXPECT_FALSE(isValid);
@@ -394,6 +413,7 @@ TEST(EmGetterTests, PowerReactiveGetter) {
 }
 
 TEST(EmGetterTests, TotalPowerReactiveGetter) {
+  SimpleTime time;
   auto getter = EmTotalPowerReactiveVar();
 
   bool isValid = true;
@@ -411,6 +431,8 @@ TEST(EmGetterTests, TotalPowerReactiveGetter) {
   EXPECT_FALSE(isValid);
 
   Supla::Sensor::ElectricityMeter em;
+  // current is set, so EM considers that we have measurements
+  em.setCurrent(0, 12 * 1000);
   isValid = true;
   EXPECT_EQ(getter->getValue(&em, &isValid), 0.0);
   EXPECT_FALSE(isValid);

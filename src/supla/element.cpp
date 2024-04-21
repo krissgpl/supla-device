@@ -23,6 +23,7 @@
 
 namespace Supla {
 Element *Element::firstPtr = nullptr;
+bool Element::invalidatePtr = false;
 
 Element::Element() : nextPtr(nullptr) {
   if (firstPtr == nullptr) {
@@ -33,6 +34,7 @@ Element::Element() : nextPtr(nullptr) {
 }
 
 Element::~Element() {
+  invalidatePtr = true;
   if (begin() == this) {
     firstPtr = next();
     return;
@@ -59,6 +61,10 @@ Element *Element::last() {
 }
 
 Element *Element::getElementByChannelNumber(int channelNumber) {
+  if (channelNumber < 0) {
+    return nullptr;
+  }
+
   Element *element = begin();
   while (element != nullptr && element->getChannelNumber() != channelNumber) {
     element = element->next();
@@ -70,8 +76,7 @@ Element *Element::getElementByChannelNumber(int channelNumber) {
 bool Element::IsAnyUpdatePending() {
   Element *element = begin();
   while (element != nullptr) {
-    auto ch = element->getChannel();
-    if (ch && ch->isUpdateReady()) {
+    if (element->isAnyUpdatePending()) {
       return true;
     }
     element = element->next();
@@ -85,7 +90,7 @@ Element *Element::next() {
 
 void Element::onInit() {}
 
-void Element::onLoadConfig() {}
+void Element::onLoadConfig(SuplaDeviceClass *) {}
 
 void Element::onLoadState() {}
 
@@ -97,12 +102,21 @@ void Element::onRegistered(Supla::Protocol::SuplaSrpc *suplaSrpc) {
   }
   auto ch = getChannel();
 
-  if (ch != nullptr && ch->isSleepingEnabled()) {
+  while (ch) {
+    if (ch->isInitialCaptionSet()) {
+      suplaSrpc->setInitialCaption(ch->getChannelNumber(),
+                                   ch->getInitialCaption());
+    }
+    if (ch->isSleepingEnabled()) {
       suplaSrpc->sendChannelStateResult(0, ch->getChannelNumber());
-  }
-  ch = getSecondaryChannel();
-  if (ch != nullptr && ch->isSleepingEnabled()) {
-      suplaSrpc->sendChannelStateResult(0, ch->getChannelNumber());
+      ch->setUpdateReady();
+    }
+
+    if (ch == getSecondaryChannel()) {
+      ch = nullptr;
+    } else {
+      ch = getSecondaryChannel();
+    }
   }
 }
 
@@ -115,10 +129,10 @@ bool Element::iterateConnected(void *ptr) {
 
 bool Element::iterateConnected() {
   bool response = true;
-  uint64_t timestamp = millis();
+  uint32_t timestamp = millis();
   Channel *secondaryChannel = getSecondaryChannel();
   if (secondaryChannel && secondaryChannel->isUpdateReady() &&
-      timestamp - secondaryChannel->lastCommunicationTimeMs > 100) {
+      timestamp - secondaryChannel->lastCommunicationTimeMs > 50) {
     secondaryChannel->lastCommunicationTimeMs = timestamp;
     secondaryChannel->sendUpdate();
     response = false;
@@ -126,7 +140,7 @@ bool Element::iterateConnected() {
 
   Channel *channel = getChannel();
   if (channel && channel->isUpdateReady() &&
-      timestamp - channel->lastCommunicationTimeMs > 100) {
+      timestamp - channel->lastCommunicationTimeMs > 50) {
     channel->lastCommunicationTimeMs = timestamp;
     channel->sendUpdate();
     response = false;
@@ -198,14 +212,88 @@ Element & Element::disableChannelState() {
   return *this;
 }
 
-void Element::handleChannelConfig(TSD_ChannelConfig *result) {
+uint8_t Element::handleChannelConfig(TSD_ChannelConfig *result, bool local) {
   (void)(result);
-  SUPLA_LOG_DEBUG(
+  (void)(local);
+  SUPLA_LOG_ERROR(
       "Element: received channel config reply, but handling is missing");
+  return SUPLA_RESULTCODE_UNSUPORTED;
 }
+
+uint8_t Element::handleWeeklySchedule(TSD_ChannelConfig *newWeeklySchedule,
+                                      bool altSchedule,
+                                      bool local) {
+  (void)(newWeeklySchedule);
+  (void)(altSchedule);
+  (void)(local);
+  SUPLA_LOG_ERROR(
+      "Element: received weekly schedly, but handling is missing");
+  return SUPLA_RESULTCODE_UNSUPORTED;
+}
+
+void Element::handleSetChannelConfigResult(
+    TSDS_SetChannelConfigResult *result) {
+  (void)(result);
+  SUPLA_LOG_ERROR(
+      "Element: received set channel config reply, but handling is missing");
+}
+
+void Element::handleChannelConfigFinished() {
+  SUPLA_LOG_ERROR(
+      "Element: received channel config finished, but handling is missing");
+}
+
 
 void Element::generateKey(char *output, const char *key) {
   Supla::Config::generateKey(output, getChannelNumber(), key);
+}
+
+void Element::onSoftReset() {
+}
+
+void Element::onDeviceConfigChange(uint64_t fieldBit) {
+  (void)(fieldBit);
+}
+
+void Element::NotifyElementsAboutConfigChange(
+    uint64_t fieldBit) {
+  for (auto element = Supla::Element::begin(); element != nullptr;
+       element = element->next()) {
+    element->onDeviceConfigChange(fieldBit);
+    delay(0);
+  }
+}
+
+bool Element::IsInvalidPtrSet() {
+  return invalidatePtr;
+}
+
+void Element::ClearInvalidPtr() {
+  invalidatePtr = false;
+}
+
+bool Element::isAnyUpdatePending() {
+  return false;
+}
+
+void Element::setInitialCaption(const char *caption, bool secondaryChannel) {
+  Supla::Channel *ch = nullptr;
+  if (!secondaryChannel) {
+    ch = getChannel();
+  } else {
+    ch = getSecondaryChannel();
+  }
+
+  if (ch) {
+    ch->setInitialCaption(caption);
+  }
+}
+
+void Element::setDefaultFunction(int32_t defaultFunction) {
+  Supla::Channel *ch = getChannel();
+  if (ch) {
+    ch->setDefaultFunction(defaultFunction);
+  }
 }
 
 };  // namespace Supla

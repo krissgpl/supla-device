@@ -37,12 +37,16 @@ void WebSender::send(int number, int precision) {
   }
   char buf[100];
   int divider = 1;
+  int printPrecission = precision;
   for (int i = 0; i < precision; i++) {
     divider *= 10;
+    if (number % divider == 0) {
+      printPrecission--;
+    }
   }
 
   snprintf(buf, sizeof(buf),
-      "%.*f", precision, static_cast<float>(number) / divider);
+      "%.*f", printPrecission, static_cast<float>(number) / divider);
   send(buf);
 }
 
@@ -96,6 +100,13 @@ void WebSender::sendSafe(const char *buf, int size) {
   if (partSize > 0) {
     send(buf + size - partSize, partSize);
   }
+}
+
+void WebSender::sendSelectItem(int value, const char *label, bool selected) {
+  char buf[100];
+  snprintf(buf, sizeof(buf), "<option value=\"%d\" %s>%s</option>", value,
+      selected ? "selected" : "", label);
+  send(buf);
 }
 
 };  // namespace Supla

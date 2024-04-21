@@ -21,6 +21,7 @@
 
 #include <map>
 #include <string>
+#include <cstdint>
 
 namespace Supla {
 namespace Parser {
@@ -43,7 +44,7 @@ class Parser {
   std::map<std::string, int> keys;
   bool valid = false;
   Supla::Source::Source *source = nullptr;
-  uint64_t lastRefreshTime = 0;
+  uint32_t lastRefreshTime = 0;
   unsigned int refreshTimeMs = 5 * 1000;  // 5 s
 };
 };  // namespace Parser

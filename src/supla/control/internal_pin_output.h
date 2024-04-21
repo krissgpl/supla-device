@@ -22,6 +22,7 @@
 #include "../action_handler.h"
 #include "../element.h"
 #include "../local_action.h"
+#include "output_interface.h"
 
 #define STATE_ON_INIT_OFF 0
 #define STATE_ON_INIT_ON  1
@@ -33,7 +34,8 @@ class Io;
 namespace Control {
 class InternalPinOutput : public Element,
                           public ActionHandler,
-                          public LocalAction {
+                          public LocalAction,
+                          public OutputInterface {
  public:
   explicit InternalPinOutput(Supla::Io *io, int pin, bool highIsOn = true);
   explicit InternalPinOutput(int pin, bool highIsOn = true);
@@ -54,13 +56,17 @@ class InternalPinOutput : public Element,
   void onInit() override;
   void iterateAlways() override;
 
+  int getOutputValue() override;
+  void setOutputValue(int value) override;
+  bool isOnOffOnly() const override;
+
  protected:
   int pin = -1;
   bool highIsOn = true;
   int8_t stateOnInit = STATE_ON_INIT_OFF;
   unsigned _supla_int_t durationMs = 0;
   unsigned _supla_int_t storedTurnOnDurationMs = 0;
-  uint64_t durationTimestamp = 0;
+  uint32_t durationTimestamp = 0;
   Supla::Io *io = nullptr;
 };
 

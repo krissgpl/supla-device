@@ -31,11 +31,37 @@ _supla_int_t srpc_ds_async_action_trigger(void *_srpc, TDS_ActionTrigger *at) {
                                                 at->ActionTrigger);
 }
 
-_supla_int_t srpc_ds_async_get_channel_config(
+_supla_int_t srpc_ds_async_get_channel_config_request(
     void *_srpc, TDS_GetChannelConfigRequest *request) {
   assert(SrpcInterface::instance);
-  return SrpcInterface::instance->getChannelConfig(request->ChannelNumber);
+  return SrpcInterface::instance->getChannelConfig(request->ChannelNumber,
+      request->ConfigType);
 }
+
+_supla_int_t srpc_ds_async_set_device_config_result(
+    void *_srpc, TSDS_SetDeviceConfigResult *result) {
+  assert(SrpcInterface::instance);
+  return SrpcInterface::instance->setDeviceConfigResult(result);
+}
+
+_supla_int_t srpc_ds_async_set_device_config_request(
+    void *_srpc, TSDS_SetDeviceConfig *request) {
+  assert(SrpcInterface::instance);
+  return SrpcInterface::instance->setDeviceConfigRequest(request);
+}
+
+_supla_int_t srpc_ds_async_set_channel_config_result(
+    void *_srpc, TSDS_SetChannelConfigResult *result) {
+  assert(SrpcInterface::instance);
+  return SrpcInterface::instance->setChannelConfigResult(result);
+}
+
+_supla_int_t srpc_ds_async_set_channel_config_request(
+    void *_srpc, TSDS_SetChannelConfig *request) {
+  assert(SrpcInterface::instance);
+  return SrpcInterface::instance->setChannelConfigRequest(request);
+}
+
 
 _supla_int_t srpc_ds_async_channel_value_changed_c(void *_srpc,
                                                    unsigned char channel_number,
@@ -80,6 +106,11 @@ _supla_int_t srpc_ds_async_device_calcfg_result(
 void *srpc_init(TsrpcParams *params) {
   assert(SrpcInterface::instance);
   return SrpcInterface::instance->srpc_init(params);
+}
+
+void srpc_free(void *srpc) {
+  assert(SrpcInterface::instance);
+  return SrpcInterface::instance->srpc_free(srpc);
 }
 
 void srpc_rd_free(TsrpcReceivedData *rd) {
@@ -128,6 +159,22 @@ _supla_int_t srpc_dcs_async_get_user_localtime(void *_srpc) {
   return SrpcInterface::instance->srpc_dcs_async_get_user_localtime(_srpc);
 }
 
+_supla_int_t srpc_ds_async_register_push_notification(
+    void *_srpc, TDS_RegisterPushNotification *reg) {
+  assert(SrpcInterface::instance);
+  assert(reg);
+  return SrpcInterface::instance->registerPushNotification(
+    reg->Context, reg->ServerManagedFields);
+}
+
+_supla_int_t srpc_ds_async_send_push_notification(void *_srpc,
+                                                  TDS_PushNotification *push) {
+  assert(SrpcInterface::instance);
+  assert(push);
+  return SrpcInterface::instance->sendPushNotification(push->Context,
+      push->TitleSize, push->BodySize, push->TitleAndBody);
+}
+
 SrpcInterface::SrpcInterface() {
   instance = this;
 }
@@ -140,7 +187,8 @@ SrpcInterface *SrpcInterface::instance = nullptr;
 
 // method copied directly from srpc.c
 _supla_int_t srpc_evtool_v2_emextended2extended(
-    TElectricityMeter_ExtendedValue_V2 *em_ev, TSuplaChannelExtendedValue *ev) {
+    const TElectricityMeter_ExtendedValue_V2 *em_ev,
+    TSuplaChannelExtendedValue *ev) {
   if (em_ev == NULL || ev == NULL || em_ev->m_count > EM_MEASUREMENT_COUNT ||
       em_ev->m_count < 0) {
     return 0;
@@ -162,8 +210,9 @@ _supla_int_t srpc_evtool_v2_emextended2extended(
   return 0;
 }
 
-_supla_int_t SRPC_ICACHE_FLASH srpc_evtool_v2_extended2emextended(
-    TSuplaChannelExtendedValue *ev, TElectricityMeter_ExtendedValue_V2 *em_ev) {
+_supla_int_t SRPC_ICACHE_FLASH
+srpc_evtool_v2_extended2emextended(const TSuplaChannelExtendedValue *ev,
+                                   TElectricityMeter_ExtendedValue_V2 *em_ev) {
   if (em_ev == NULL || ev == NULL ||
       ev->type != EV_TYPE_ELECTRICITY_METER_MEASUREMENT_V2 || ev->size == 0 ||
       ev->size > sizeof(TElectricityMeter_ExtendedValue_V2)) {
@@ -188,6 +237,14 @@ _supla_int_t SRPC_ICACHE_FLASH srpc_evtool_v2_extended2emextended(
   }
 
   return 1;
+}
+
+_supla_int_t srpc_dcs_async_set_channel_caption(void *_srpc,
+                                                TDCS_SetCaption *caption) {
+  assert(SrpcInterface::instance);
+  assert(caption);
+  return SrpcInterface::instance->setChannelCaption(caption->ChannelNumber,
+      caption->Caption);
 }
 
 SrpcMock::SrpcMock() {}

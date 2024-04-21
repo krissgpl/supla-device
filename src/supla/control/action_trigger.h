@@ -21,22 +21,26 @@
 
 #include <stdint.h>
 
-#include "../action_handler.h"
-#include "../actions.h"
-#include "../at_channel.h"
-#include "../element.h"
-#include "button.h"
-#include "supla/protocol/supla_srpc.h"
+#include <supla/action_handler.h>
+#include <supla/actions.h>
+#include <supla/at_channel.h>
+#include <supla/element.h>
 
 namespace Supla {
 
-enum ActionHandlingType {
+namespace Protocol {
+class SuplaSrpc;
+}
+
+enum ActionHandlingType : uint8_t {
   ActionHandlingType_RelayOnSuplaServer = 0,
   ActionHandlingType_PublishAllDisableNone = 1,
   ActionHandlingType_PublishAllDisableAll = 2
 };
 
 namespace Control {
+
+class Button;
 
 class ActionTrigger : public Element, public ActionHandler {
  public:
@@ -62,8 +66,9 @@ class ActionTrigger : public Element, public ActionHandler {
   Supla::Channel *getChannel() override;
   void onInit() override;
   void onRegistered(Supla::Protocol::SuplaSrpc *suplaSrpc = nullptr) override;
-  void handleChannelConfig(TSD_ChannelConfig *result) override;
-  void onLoadConfig() override;
+  uint8_t handleChannelConfig(TSD_ChannelConfig *result,
+                              bool local = false) override;
+  void onLoadConfig(SuplaDeviceClass *) override;
   void onLoadState() override;
   void onSaveState() override;
 
@@ -71,21 +76,24 @@ class ActionTrigger : public Element, public ActionHandler {
   void enableStateStorage();
 
   static int actionTriggerCapToButtonEvent(uint32_t actionCap);
+  static int actionTriggerCapToActionId(uint32_t actionCap);
   static int getActionTriggerCap(int action);
 
  protected:
+  void addActionToButtonAndDisableIt(int event, int action);
   void parseActiveActionsFromServer();
-  Supla::AtChannel channel;
+
   Supla::Control::Button *attachedButton = nullptr;
+  Supla::ActionHandlerClient *localHandlerForEnabledAt = nullptr;
+  Supla::ActionHandlerClient *localHandlerForDisabledAt = nullptr;
   uint32_t activeActionsFromServer = 0;
   uint32_t disablesLocalOperation = 0;
   uint32_t disabledCapabilities = 0;
-  bool storageEnabled = false;
-  ActionHandlingType actionHandlingType =
-    ActionHandlingType_RelayOnSuplaServer;
 
-  Supla::ActionHandlerClient *localHandlerForEnabledAt = nullptr;
-  Supla::ActionHandlerClient *localHandlerForDisabledAt = nullptr;
+  Supla::AtChannel channel;
+
+  ActionHandlingType actionHandlingType = ActionHandlingType_RelayOnSuplaServer;
+  bool storageEnabled = false;
 };
 
 }  // namespace Control

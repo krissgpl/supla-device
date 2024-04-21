@@ -46,6 +46,7 @@ ImpulseCounter::ImpulseCounter(int _impulsePin,
       detectLowToHigh(_detectLowToHigh),
       inputPullup(_inputPullup) {
   channel.setType(SUPLA_CHANNELTYPE_IMPULSE_COUNTER);
+  channel.setFlag(SUPLA_CHANNEL_FLAG_CALCFG_RESET_COUNTERS);
 
   prevState = (detectLowToHigh == true ? LOW : HIGH);
 
@@ -66,9 +67,11 @@ void ImpulseCounter::onInit() {
   } else {
     Supla::Io::pinMode(channel.getChannelNumber(), impulsePin, INPUT, io);
   }
+  prevState =
+      Supla::Io::digitalRead(channel.getChannelNumber(), impulsePin, io);
 }
 
-unsigned _supla_int64_t ImpulseCounter::getCounter() {
+uint64_t ImpulseCounter::getCounter() {
   return counter;
 }
 
@@ -77,15 +80,14 @@ void ImpulseCounter::onSaveState() {
 }
 
 void ImpulseCounter::onLoadState() {
-  unsigned _supla_int64_t data;
+  uint64_t data;
   if (Supla::Storage::ReadState((unsigned char *)&data, sizeof(data))) {
     setCounter(data);
   }
 }
 
-void ImpulseCounter::setCounter(unsigned _supla_int64_t value) {
+void ImpulseCounter::setCounter(uint64_t value) {
   counter = value;
-  channel.setNewValue(value);
   SUPLA_LOG_DEBUG(
             "ImpulseCounter[%d] - set counter to %d",
             channel.getChannelNumber(),
@@ -94,7 +96,6 @@ void ImpulseCounter::setCounter(unsigned _supla_int64_t value) {
 
 void ImpulseCounter::incCounter() {
   counter++;
-  channel.setNewValue(getCounter());
 }
 
 void ImpulseCounter::onFastTimer() {
@@ -118,6 +119,28 @@ void ImpulseCounter::handleAction(int event, int action) {
       setCounter(0);
       break;
     }
+  }
+}
+
+int ImpulseCounter::handleCalcfgFromServer(TSD_DeviceCalCfgRequest *request) {
+  if (request) {
+    if (request->Command == SUPLA_CALCFG_CMD_RESET_COUNTERS) {
+      if (!request->SuperUserAuthorized) {
+        return SUPLA_CALCFG_RESULT_UNAUTHORIZED;
+      }
+      SUPLA_LOG_INFO("ImpulseCounter[%d] - CALCFG reset counter received",
+                     channel.getChannelNumber());
+      setCounter(0);
+      return SUPLA_CALCFG_RESULT_DONE;
+    }
+  }
+  return SUPLA_CALCFG_RESULT_FALSE;
+}
+
+void ImpulseCounter::iterateAlways() {
+  if (millis() - lastReadTime > 1000) {
+    lastReadTime = millis();
+    channel.setNewValue(counter);
   }
 }
 

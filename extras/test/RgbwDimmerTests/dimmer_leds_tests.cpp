@@ -18,26 +18,27 @@
 #include <gtest/gtest.h>
 #include <arduino_mock.h>
 #include <supla/control/dimmer_leds.h>
+#include <simple_time.h>
 
 using ::testing::Return;
 
 class TimeInterfaceStub : public TimeInterface {
   public:
-    virtual uint64_t millis() override {
-      static uint64_t value = 0;
+    virtual uint32_t millis() override {
+      static uint32_t value = 0;
       value += 1000;
       return value;
     }
 };
 
 TEST(DimmerLedsTests, SettingNewDimValue) {
-  TimeInterfaceStub time;
+  SimpleTime time;
   DigitalInterfaceMock ioMock;
 
   EXPECT_CALL(ioMock, pinMode(1, OUTPUT));
-  EXPECT_CALL(ioMock, analogWrite(1, 0));
+  EXPECT_CALL(ioMock, analogWrite(1, 0)).Times(1);
 
-  EXPECT_CALL(ioMock, analogWrite(1, (1023*10)/100));
+  EXPECT_CALL(ioMock, analogWrite(1, (1023*10)/100)).Times(1);
 
   Supla::Control::DimmerLeds dim(1);
 
@@ -60,7 +61,11 @@ TEST(DimmerLedsTests, SettingNewDimValue) {
   EXPECT_EQ(ch->getValueBrightness(), 0);
 
   dim.iterateAlways();
-  dim.onTimer();
+  time.advance(1000);
+  dim.onFastTimer();
+  time.advance(1);
+  dim.onFastTimer();
+  time.advance(1);
 
   EXPECT_EQ(ch->getValueRed(), 0);
   EXPECT_EQ(ch->getValueGreen(), 0);
@@ -71,7 +76,10 @@ TEST(DimmerLedsTests, SettingNewDimValue) {
   dim.setRGBW(1, 2, 3, 4, 10);
 
   dim.iterateAlways();
-  dim.onTimer();
+  time.advance(1000);
+  dim.onFastTimer();
+  time.advance(1000);
+  dim.iterateAlways();
 
   EXPECT_EQ(ch->getValueRed(), 0);
   EXPECT_EQ(ch->getValueGreen(), 0);

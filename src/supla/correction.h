@@ -27,6 +27,8 @@ class Correction {
        double correction,
        bool forSecondaryValue = false);
   static double get(uint8_t channelNumber, bool forSecondaryValue = false);
+  static Correction *getInstance(uint8_t channelNumber,
+                                 bool forSecondaryValue = false);
   static void clear();
 
  protected:
@@ -34,10 +36,12 @@ class Correction {
   ~Correction();
 
   static Correction *first;
-  Correction *next;
-  uint8_t channelNumber;
-  double correction;
-  bool forSecondaryValue;
+
+  double correction = 0;
+  Correction *next = nullptr;
+
+  uint8_t channelNumber = 0;
+  bool forSecondaryValue = false;
 };
 
 };  // namespace Supla

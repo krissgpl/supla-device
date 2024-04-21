@@ -25,6 +25,8 @@ namespace Supla {
 enum Action {
   // Relays
   TURN_ON,
+  TURN_ON_WITHOUT_TIMER,  // used with staircase timer function, when
+                          // timer should not be used this time
   TURN_OFF,
   TOGGLE,
 
@@ -74,6 +76,10 @@ enum Action {
 
   // Impulse counter
   RESET,
+  INCREMENT,
+  DECREMENT,
+  ENABLE,
+  DISABLE,
 
   // Action trigger
   SEND_AT_TURN_ON,
@@ -105,7 +111,22 @@ enum Action {
   TARE_SCALES,
 
   VOLUME_UP,
-  VOLUME_DOWN
+  VOLUME_DOWN,
+
+  // Thermostat
+  INCREASE_TEMPERATURE,
+  DECREASE_TEMPERATURE,
+  INCREASE_HEATING_TEMPERATURE,
+  DECREASE_HEATING_TEMPERATURE,
+  INCREASE_COOLING_TEMPERATURE,
+  DECREASE_COOLING_TEMPERATURE,
+  SWITCH_TO_MANUAL_MODE,
+  SWITCH_TO_WEEKLY_SCHEDULE_MODE,
+  SWITCH_TO_MANUAL_MODE_HEAT,
+  SWITCH_TO_MANUAL_MODE_COOL,
+  SWITCH_TO_MANUAL_MODE_HEAT_COOL,
+  TOGGLE_MANUAL_WEEKLY_SCHEDULE_MODES,
+  TOGGLE_OFF_MANUAL_WEEKLY_SCHEDULE_MODES,
 };
 };  // namespace Supla
 

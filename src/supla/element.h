@@ -21,6 +21,8 @@
 
 #include "channel.h"
 
+class SuplaDeviceClass;
+
 namespace Supla {
 
 class Element {
@@ -31,12 +33,16 @@ class Element {
   static Element *last();
   static Element *getElementByChannelNumber(int channelNumber);
   static bool IsAnyUpdatePending();
+  static void NotifyElementsAboutConfigChange(uint64_t fieldBit);
+
+  static bool IsInvalidPtrSet();
+  static void ClearInvalidPtr();
   Element *next();
 
   // First method called on element in SuplaDevice.begin()
   // Called only if Config Storage class is configured
   // Element should read its configration in this method
-  virtual void onLoadConfig();
+  virtual void onLoadConfig(SuplaDeviceClass *sdc);
 
   // Second method called on element in SuplaDevice.begin()
   // method called during Config initialization (i.e. read from EEPROM, FRAM).
@@ -77,6 +83,11 @@ class Element {
   // other SuplaDevice activities
   virtual void onFastTimer();
 
+  // method called when soft restart is triggered
+  virtual void onSoftReset();
+
+  virtual void onDeviceConfigChange(uint64_t fieldBit);
+
   // return value:
   //  -1 - don't send reply to server
   //  0 - success==false
@@ -90,7 +101,19 @@ class Element {
   virtual void handleGetChannelState(TDSC_ChannelState *channelState);
 
   virtual int handleCalcfgFromServer(TSD_DeviceCalCfgRequest *request);
-  virtual void handleChannelConfig(TSD_ChannelConfig *result);
+
+  // Returns SUPLA_RESULTCODE_
+  virtual uint8_t handleChannelConfig(TSD_ChannelConfig *newChannelConfig,
+                                      bool local = false);
+  virtual uint8_t handleWeeklySchedule(TSD_ChannelConfig *newWeeklySchedule,
+                                       bool altSchedule = false,
+                                       bool local = false);
+  // handleSetChannelConfigResult should handle both standard channel config
+  // and weekly schedule config
+  virtual void handleSetChannelConfigResult(
+      TSDS_SetChannelConfigResult *result);
+
+  virtual void handleChannelConfigFinished();
 
   int getChannelNumber();
   virtual Channel *getChannel();
@@ -100,8 +123,14 @@ class Element {
 
   Element &disableChannelState();
 
+  virtual bool isAnyUpdatePending();
+
+  void setInitialCaption(const char *caption, bool secondaryChannel = false);
+  void setDefaultFunction(int32_t defaultFunction);
+
  protected:
   static Element *firstPtr;
+  static bool invalidatePtr;
   Element *nextPtr;
 };
 

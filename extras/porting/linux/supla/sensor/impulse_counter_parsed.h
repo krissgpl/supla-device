@@ -37,12 +37,12 @@ class ImpulseCounterParsed : public SensorParsed<ChannelElement> {
  public:
   explicit ImpulseCounterParsed(Supla::Parser::Parser *);
 
-  virtual unsigned _supla_int64_t getValue();
+  virtual uint64_t getValue();
   void onInit() override;
   void iterateAlways() override;
 
  protected:
-  uint64_t lastReadTime = 0;
+  uint32_t lastReadTime = 0;
   bool isDataErrorLogged = false;
 };
 };  // namespace Sensor

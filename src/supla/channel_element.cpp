@@ -15,43 +15,7 @@
 */
 
 #include "channel_element.h"
-#include "events.h"
 
 Supla::Channel *Supla::ChannelElement::getChannel() {
   return &channel;
 }
-
-void Supla::ChannelElement::addAction(int action,
-    ActionHandler &client,
-    int event,
-    bool alwaysEnabled) {
-  channel.addAction(action, client, event, alwaysEnabled);
-}
-
-void Supla::ChannelElement::addAction(int action,
-    ActionHandler *client,
-    int event,
-    bool alwaysEnabled) {
-  addAction(action, *client, event, alwaysEnabled);
-}
-
-bool Supla::ChannelElement::isEventAlreadyUsed(int event) {
-  return channel.isEventAlreadyUsed(event);
-}
-
-void Supla::ChannelElement::addAction(int action,
-    ActionHandler &client,
-    Supla::Condition *condition,
-    bool alwaysEnabled) {
-  condition->setClient(client);
-  condition->setSource(this);
-  channel.addAction(action, condition, Supla::ON_CHANGE, alwaysEnabled);
-}
-
-void Supla::ChannelElement::addAction(int action,
-    ActionHandler *client,
-    Supla::Condition *condition,
-    bool alwaysEnabled) {
-  addAction(action, *client, condition, alwaysEnabled);
-}
-

@@ -84,9 +84,9 @@ void postHandler() {
 }
 
 void postBetaHandler() {
-  SUPLA_LOG_DEBUG("SERVER: post request");
+  SUPLA_LOG_DEBUG("SERVER: beta post request");
   if (serverInstance) {
-    if (serverInstance->handlePost()) {
+    if (serverInstance->handlePost(true)) {
       getBetaHandler();
     }
   }
@@ -105,9 +105,12 @@ Supla::EspWebServer::~EspWebServer() {
   serverInstance = nullptr;
 }
 
-bool Supla::EspWebServer::handlePost() {
+bool Supla::EspWebServer::handlePost(bool beta) {
   notifyClientConnected();
   resetParser();
+  if (beta) {
+    setBetaProcessing();
+  }
 
   for (int i = 0; i < server.args(); i++) {
     SUPLA_LOG_DEBUG(
@@ -116,9 +119,11 @@ bool Supla::EspWebServer::handlePost() {
               server.arg(i).c_str());
     for (auto htmlElement = Supla::HtmlElement::begin(); htmlElement;
          htmlElement = htmlElement->next()) {
-      if (htmlElement->handleResponse(server.argName(i).c_str(),
-                                      server.arg(i).c_str())) {
-        break;
+      if (htmlElement->section != excludeSection) {
+        if (htmlElement->handleResponse(server.argName(i).c_str(),
+                                        server.arg(i).c_str())) {
+          break;
+        }
       }
     }
     if (strcmp(server.argName(i).c_str(), "rbt") == 0) {
@@ -131,6 +136,13 @@ bool Supla::EspWebServer::handlePost() {
       }
     }
     delay(1);
+  }
+
+  for (auto htmlElement = Supla::HtmlElement::begin(); htmlElement;
+      htmlElement = htmlElement->next()) {
+    if (htmlElement->section != excludeSection) {
+      htmlElement->onProcessingEnd();
+    }
   }
 
   if (Supla::Storage::ConfigInstance()) {

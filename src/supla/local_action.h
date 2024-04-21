@@ -34,8 +34,8 @@ class ActionHandlerClient {
   LocalAction *trigger = nullptr;
   ActionHandler *client = nullptr;
   ActionHandlerClient *next = nullptr;
-  uint8_t onEvent = 0;
-  uint8_t action = 0;
+  uint16_t onEvent = 0;
+  uint16_t action = 0;
   static ActionHandlerClient *begin;
 
   bool isEnabled();
@@ -53,24 +53,37 @@ class ActionHandlerClient {
 class LocalAction {
  public:
   virtual ~LocalAction();
-  virtual void addAction(int action,
+  virtual void addAction(uint16_t action,
       ActionHandler &client,   // NOLINT(runtime/references)
-      int event,
+      uint16_t event,
       bool alwaysEnabled = false);
-  virtual void addAction(int action, ActionHandler *client, int event,
+  virtual void addAction(uint16_t action, ActionHandler *client, uint16_t event,
       bool alwaysEnabled = false);
 
-  virtual void runAction(int event);
+  virtual void runAction(uint16_t event);
 
-  virtual bool isEventAlreadyUsed(int event);
-  virtual ActionHandlerClient *getHandlerForFirstClient(int event);
+  virtual bool isEventAlreadyUsed(uint16_t event, bool ignoreAlwaysEnabled);
+  virtual ActionHandlerClient *getHandlerForFirstClient(uint16_t event);
   virtual ActionHandlerClient *getHandlerForClient(ActionHandler *client,
-                                                   int event);
+                                                   uint16_t event);
 
-  virtual void disableOtherClients(const ActionHandler &client, int event);
-  virtual void enableOtherClients(const ActionHandler &client, int event);
-  virtual void disableOtherClients(const ActionHandler *client, int event);
-  virtual void enableOtherClients(const ActionHandler *client, int event);
+  virtual void disableOtherClients(const ActionHandler &client, uint16_t event);
+  virtual void enableOtherClients(const ActionHandler &client, uint16_t event);
+  virtual void disableOtherClients(const ActionHandler *client, uint16_t event);
+  virtual void enableOtherClients(const ActionHandler *client, uint16_t event);
+
+  static void DeleteActionsHandledBy(const ActionHandler *client);
+  static void DeleteActionsTriggeredBy(const LocalAction *action);
+  static void NullifyActionsHandledBy(const ActionHandler *client);
+
+  // action and event are internally uint16_t type, however -1 is used
+  // as "all events/actions", so here we pass int32_t
+  virtual void disableAction(int32_t action,
+                             ActionHandler *client,
+                             int32_t event);
+  virtual void enableAction(int32_t action,
+                            ActionHandler *client,
+                            int32_t event);
 
   virtual bool disableActionsInConfigMode();
 

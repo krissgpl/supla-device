@@ -18,20 +18,21 @@
 #include <gtest/gtest.h>
 #include <arduino_mock.h>
 #include <supla/control/rgbw_leds.h>
+#include <simple_time.h>
 
 using ::testing::Return;
 
 class TimeInterfaceStub : public TimeInterface {
   public:
-    virtual uint64_t millis() override {
-      static uint64_t value = 0;
+    virtual uint32_t millis() override {
+      static uint32_t value = 0;
       value += 1000;
       return value;
     }
 };
 
 TEST(RgbwLedsTests, SettingNewRGBWValue) {
-  TimeInterfaceStub time;
+  SimpleTime time;
   DigitalInterfaceMock ioMock;
 
   EXPECT_CALL(ioMock, pinMode(1, OUTPUT));
@@ -60,6 +61,7 @@ TEST(RgbwLedsTests, SettingNewRGBWValue) {
   EXPECT_EQ(ch->getValueColorBrightness(), 0);
   EXPECT_EQ(ch->getValueBrightness(), 0);
 
+  time.advance(1000);
   rgbw.onInit();
 
   EXPECT_EQ(ch->getValueRed(), 0);
@@ -68,8 +70,12 @@ TEST(RgbwLedsTests, SettingNewRGBWValue) {
   EXPECT_EQ(ch->getValueColorBrightness(), 0);
   EXPECT_EQ(ch->getValueBrightness(), 0);
 
+  time.advance(1000);
   rgbw.iterateAlways();
-  rgbw.onTimer();
+  time.advance(1);
+  rgbw.onFastTimer();
+  time.advance(1);
+  rgbw.onFastTimer();
 
   EXPECT_EQ(ch->getValueRed(), 0);
   EXPECT_EQ(ch->getValueGreen(), 255);
@@ -79,8 +85,12 @@ TEST(RgbwLedsTests, SettingNewRGBWValue) {
 
   rgbw.setRGBW(1, 2, 3, 100, 100);
 
+  time.advance(1000);
   rgbw.iterateAlways();
-  rgbw.onTimer();
+  time.advance(1);
+  rgbw.onFastTimer();
+  time.advance(1);
+  rgbw.onFastTimer();
 
   EXPECT_EQ(ch->getValueRed(), 1);
   EXPECT_EQ(ch->getValueGreen(), 2);

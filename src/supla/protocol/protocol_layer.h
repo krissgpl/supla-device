@@ -38,6 +38,7 @@ class ProtocolLayer {
   ProtocolLayer *next();
   SuplaDeviceClass *getSdc();
 
+  void setVerboseLog(bool value);
   virtual void onInit() = 0;
   virtual bool onLoadConfig() = 0;
   virtual bool verifyConfig() = 0;
@@ -47,7 +48,7 @@ class ProtocolLayer {
   // Return value indicates if specific protocol is ready to handle data
   // from other elements and if call to Element::iterateConnected should be
   // done.
-  virtual bool iterate(uint64_t _millis) = 0;
+  virtual bool iterate(uint32_t _millis) = 0;
   virtual bool isNetworkRestartRequested() = 0;
   virtual uint32_t getConnectionFailTime() = 0;
   virtual bool isConnectionError();
@@ -55,18 +56,44 @@ class ProtocolLayer {
   virtual bool isUpdatePending();
   virtual bool isRegisteredAndReady() = 0;
   virtual void sendActionTrigger(uint8_t channelNumber, uint32_t actionId) = 0;
+  virtual void sendRemainingTimeValue(uint8_t channelNumber,
+                                      uint32_t timeMs,
+                                      uint8_t state,
+                                      int32_t senderId);
+  virtual void sendRemainingTimeValue(uint8_t channelNumber,
+                                      uint32_t remainingTime,
+                                      uint8_t* state,
+                                      int32_t senderId,
+                                      bool useSecondsInsteadOfMs);
   virtual void getUserLocaltime();
   virtual void sendChannelValueChanged(uint8_t channelNumber, char *value,
       unsigned char offline, uint32_t validityTimeSec) = 0;
   virtual void sendExtendedChannelValueChanged(uint8_t channelNumber,
     TSuplaChannelExtendedValue *value) = 0;
-  virtual void getChannelConfig(uint8_t channelNumber);
+
+  virtual void getChannelConfig(uint8_t channelNumber,
+      uint8_t configType = SUPLA_CONFIG_TYPE_DEFAULT);
+  virtual bool setChannelConfig(uint8_t channelNumber,
+      _supla_int_t channelFunction, void *channelConfig, int size,
+      uint8_t configType = SUPLA_CONFIG_TYPE_DEFAULT);
+  virtual void notifyConfigChange(int channelNumber);
+
+  virtual bool setDeviceConfig(TSDS_SetDeviceConfig *deviceConfig);
+  virtual bool setInitialCaption(uint8_t channelNumber, const char *caption);
+
+  virtual void sendRegisterNotification(
+      TDS_RegisterPushNotification *notification);
+  virtual bool sendNotification(int context,
+                              const char *title,
+                              const char *message,
+                              int soundId);
 
  protected:
   static ProtocolLayer *firstPtr;
   ProtocolLayer *nextPtr = nullptr;
   SuplaDeviceClass *sdc = nullptr;
   bool configEmpty = true;
+  bool verboseLog = true;
 };
 
 }  // namespace Protocol

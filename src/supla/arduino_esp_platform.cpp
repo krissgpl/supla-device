@@ -20,6 +20,8 @@
 #include <supla/log_wrapper.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include <supla/clock/clock.h>
+#include <SuplaDevice.h>
 
 #include "tools.h"
 #include "supla/network/client.h"
@@ -27,6 +29,13 @@
 namespace Supla {
 class ArduinoEspClient : public Client {
  public:
+  ~ArduinoEspClient() {
+    if (wifiClient) {
+      wifiClient->stop();
+      delete wifiClient;
+    }
+  }
+
   int available() override {
     if (wifiClient) {
       return wifiClient->available();
@@ -72,10 +81,11 @@ class ArduinoEspClient : public Client {
       clientSec->setBufferSizes(1024, 512);  // EXPERIMENTAL
       if (rootCACert) {
         // Set time via NTP, as required for x.509 validation
-        static bool timeConfigured = false;
+        static bool timeConfigured = Supla::Clock::IsReady();
 
         if (!timeConfigured) {
-          configTime(3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+          timeConfigured = true;
+          configTime(0, 0, "pool.ntp.org", "time.nist.gov");
           SUPLA_LOG_DEBUG("Waiting for NTP time sync");
           time_t now = time(nullptr);
           while (now < 8 * 3600 * 2) {
@@ -84,7 +94,9 @@ class ArduinoEspClient : public Client {
           }
         }
 
-        caCert = new BearSSL::X509List(rootCACert);
+        if (caCert == nullptr) {
+          caCert = new BearSSL::X509List(rootCACert);
+        }
         clientSec->setTrustAnchors(caCert);
       } else if (fingerprint.length() > 0) {
         clientSec->setFingerprint(fingerprint.c_str());
@@ -103,6 +115,16 @@ class ArduinoEspClient : public Client {
     }
 
     int result = wifiClient->connect(host, port);
+    if (result == 1) {
+      srcIp = wifiClient->localIP();
+      uint8_t ipArr[4];
+      for (int i = 0; i < 4; i++) {
+        ipArr[i] = (srcIp >> (i * 8)) & 0xFF;
+      }
+
+      SUPLA_LOG_INFO("Connected via IP %d.%d.%d.%d", ipArr[0], ipArr[1],
+          ipArr[2], ipArr[3]);
+    }
     if (clientSec) {
       char buf[200];
       int lastErr = 0;
@@ -114,6 +136,10 @@ class ArduinoEspClient : public Client {
 
       if (lastErr) {
         SUPLA_LOG_ERROR("SSL error: %d, %s", lastErr, buf);
+        if (sdc && (lastConnErr != lastErr)) {
+          lastConnErr = lastErr;
+          sdc->addLastStateLog(buf);
+        }
       }
     }
 #ifdef ARDUINO_ARCH_ESP8266
@@ -122,7 +148,6 @@ class ArduinoEspClient : public Client {
       caCert = nullptr;
     }
 #endif
-
     return result;
   }
 
@@ -150,6 +175,7 @@ class ArduinoEspClient : public Client {
   WiFiClient *wifiClient = nullptr;
   String fingerprint;
   uint16_t timeoutMs = 3000;
+  int lastConnErr = 0;
 };
 };  // namespace Supla
 

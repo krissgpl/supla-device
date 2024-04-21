@@ -97,7 +97,7 @@ class OneWireBus {
 
   uint8_t pin;
   OneWireBus *nextBus;
-  uint64_t lastReadTime;
+  uint32_t lastReadTime;
   DallasTemperature sensors;
 
  protected:
@@ -143,11 +143,11 @@ class DS18B20 : public Thermometer {
   }
 
   void iterateAlways() {
-    if (myBus->lastReadTime + 10000 < millis()) {
+    if (millis() - myBus->lastReadTime > 10000) {
       myBus->sensors.requestTemperatures();
       myBus->lastReadTime = millis();
     }
-    if (myBus->lastReadTime + 5000 < millis() &&
+    if (millis() - myBus->lastReadTime > 5000 &&
         (lastReadTime != myBus->lastReadTime)) {
       channel.setNewValue(getValue());
       lastReadTime = myBus->lastReadTime;

@@ -46,7 +46,7 @@ class MqttUT : public Supla::Protocol::Mqtt {
   public:
     explicit MqttUT(SuplaDeviceClass *sdc) : Supla::Protocol::Mqtt(sdc) {}
     void disconnect() override {}
-    bool iterate(uint64_t millis) override {
+    bool iterate(uint32_t millis) override {
       return false;
     }
     void publishImp(const char *topic,
@@ -142,7 +142,6 @@ TEST_F(MqttProcessDataTests, dataProcessTests) {
       });
   EXPECT_TRUE(mqtt.processData(topic0setOn, payload));
   EXPECT_TRUE(mqtt.processData(topic1setOn, payloadFalse));
-
 }
 
 TEST_F(MqttProcessDataTests, relaySetOnTests) {
@@ -388,7 +387,6 @@ TEST_F(MqttProcessDataTests, relaySetOnTests) {
   EXPECT_TRUE(mqtt.processData(
         "supla/devices/my-device-0405ab/channels/0/set/on",
         "tRuE"));
-
 }
 
 TEST_F(MqttProcessDataTests, executeActionTests) {

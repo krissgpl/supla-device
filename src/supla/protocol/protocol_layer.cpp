@@ -93,12 +93,80 @@ bool ProtocolLayer::isConnecting() {
 void ProtocolLayer::getUserLocaltime() {
 }
 
-void ProtocolLayer::getChannelConfig(uint8_t channelNumber) {
+void ProtocolLayer::getChannelConfig(uint8_t channelNumber,
+                                     uint8_t configType) {
   (void)(channelNumber);
+  (void)(configType);
+}
+
+bool ProtocolLayer::setChannelConfig(uint8_t channelNumber,
+      _supla_int_t channelFunction, void *channelConfig, int size,
+      uint8_t configType) {
+  (void)(channelNumber);
+  (void)(channelFunction);
+  (void)(channelConfig);
+  (void)(size);
+  (void)(configType);
+  return false;
+}
+
+bool ProtocolLayer::setDeviceConfig(TSDS_SetDeviceConfig *deviceConfig) {
+  (void)(deviceConfig);
+  return false;
+}
+
+bool ProtocolLayer::setInitialCaption(uint8_t, const char *) {
+  return false;
 }
 
 bool ProtocolLayer::isConfigEmpty() {
   return configEmpty;
+}
+
+void ProtocolLayer::sendRegisterNotification(
+      TDS_RegisterPushNotification *notification) {
+  (void)(notification);
+}
+
+bool ProtocolLayer::sendNotification(int context,
+                              const char *title,
+                              const char *message,
+                              int soundId) {
+  (void)(context);
+  (void)(title);
+  (void)(message);
+  (void)(soundId);
+  return false;
+}
+
+void ProtocolLayer::sendRemainingTimeValue(uint8_t channelNumber,
+                                           uint32_t timeMs,
+                                           uint8_t state,
+                                           int32_t senderId) {
+  (void)(channelNumber);
+  (void)(timeMs);
+  (void)(state);
+  (void)(senderId);
+}
+
+void ProtocolLayer::sendRemainingTimeValue(uint8_t channelNumber,
+                                           uint32_t remainingTime,
+                                           uint8_t *state,
+                                           int32_t senderId,
+                                           bool useSecondsInsteadOfMs) {
+  (void)(channelNumber);
+  (void)(remainingTime);
+  (void)(state);
+  (void)(senderId);
+  (void)(useSecondsInsteadOfMs);
+}
+
+void ProtocolLayer::notifyConfigChange(int channelNumber) {
+  (void)(channelNumber);
+}
+
+void ProtocolLayer::setVerboseLog(bool value) {
+  verboseLog = value;
 }
 
 }  // namespace Protocol

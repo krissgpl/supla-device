@@ -100,6 +100,7 @@ class FullStartupWithConfig : public ::testing::Test {
     virtual void TearDown() {
       Supla::Channel::lastCommunicationTimeMs = 0;
       memset(&(Supla::Channel::reg_dev), 0, sizeof(Supla::Channel::reg_dev));
+      client = nullptr;
     }
 };
 
@@ -159,8 +160,8 @@ TEST_F(FullStartupWithConfig, WithConfigSslDisabled) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -282,8 +283,8 @@ TEST_F(FullStartupWithConfig,
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -406,8 +407,8 @@ TEST_F(FullStartupWithConfig,
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -530,8 +531,8 @@ TEST_F(FullStartupWithConfig,
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -637,7 +638,7 @@ TEST_F(FullStartupWithConfig,
         *buf = 1;
         return true;
       }
-      EXPECT_TRUE(false);
+      EXPECT_TRUE(false) << "Unexpected config key: " << key;
       return false;
     });
   EXPECT_CALL(cfg, getCustomCASize())
@@ -662,8 +663,8 @@ TEST_F(FullStartupWithConfig,
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -769,7 +770,7 @@ TEST_F(FullStartupWithConfig,
         *buf = 1;
         return true;
       }
-      EXPECT_TRUE(false);
+      EXPECT_TRUE(false) << "Unexpected config key: " << key;
       return false;
     });
   EXPECT_CALL(cfg, getCustomCASize())
@@ -788,8 +789,8 @@ TEST_F(FullStartupWithConfig,
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -897,7 +898,7 @@ TEST_F(FullStartupWithConfig,
         *buf = 2;
         return true;
       }
-      EXPECT_TRUE(false);
+      EXPECT_TRUE(false) << "Unexpected config key: " << key;
       return false;
     });
   EXPECT_CALL(cfg, getWiFiSSID(_)).WillRepeatedly([] (char *ssid) {
@@ -913,8 +914,8 @@ TEST_F(FullStartupWithConfig,
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_));
@@ -979,7 +980,8 @@ TEST_F(FullStartupWithConfig,
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeOneProto) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
@@ -1019,17 +1021,14 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProto) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_TRUE(sd.begin(18));
   EXPECT_EQ(sd.getCurrentStatus(), STATUS_OFFLINE_MODE);
@@ -1038,10 +1037,6 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProto) {
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1059,6 +1054,8 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProto) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeProtoDisabled) {
+  delete client;
+  client = nullptr;
   int dummy = 0;
   sd.allowWorkInOfflineMode();
   {
@@ -1098,8 +1095,8 @@ TEST_F(FullStartupWithConfig, OfflineModeProtoDisabled) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(false));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
@@ -1117,10 +1114,6 @@ TEST_F(FullStartupWithConfig, OfflineModeProtoDisabled) {
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1138,7 +1131,8 @@ TEST_F(FullStartupWithConfig, OfflineModeProtoDisabled) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOff) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   MqttMock mqtt(&sd);
   sd.allowWorkInOfflineMode();
   {
@@ -1181,17 +1175,14 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOff) {
   EXPECT_CALL(cfg, getWiFiSSID(_)).WillRepeatedly(Return(false));
   EXPECT_CALL(cfg, getWiFiPassword(_)).WillRepeatedly(Return(false));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_TRUE(sd.begin(18));
   EXPECT_EQ(sd.getCurrentStatus(), STATUS_OFFLINE_MODE);
@@ -1200,10 +1191,6 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOff) {
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1221,6 +1208,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOff) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOff) {
+  delete client;
+  client = nullptr;
   int dummy = 0;
   MqttMock mqtt(&sd);
   sd.allowWorkInOfflineMode();
@@ -1263,8 +1252,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOff) {
   EXPECT_CALL(cfg, getWiFiSSID(_)).WillRepeatedly(Return(false));
   EXPECT_CALL(cfg, getWiFiPassword(_)).WillRepeatedly(Return(false));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
@@ -1282,10 +1271,6 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOff) {
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1303,6 +1288,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOff) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOn) {
+  delete client;
+  client = nullptr;
   int dummy = 0;
   MqttMock mqtt(&sd);
   sd.allowWorkInOfflineMode();
@@ -1357,8 +1344,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOn) {
 
   EXPECT_CALL(cfg, saveIfNeeded()).Times(AtLeast(1));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
@@ -1376,10 +1363,6 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOn) {
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1397,7 +1380,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOn) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiSsidSet) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
@@ -1442,26 +1426,19 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiSsidSet) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(1);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(1);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1482,7 +1459,8 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiSsidSet) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiSsidAndPassSet) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
@@ -1531,26 +1509,19 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiSsidAndPassSet) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(1);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(1);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1574,7 +1545,8 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiPassSet) {
   // When only password is configured, it is considered as empty config, because
   // password can't be cleared manually via www (only factory reset will clear
   // it).
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
@@ -1623,26 +1595,19 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiPassSet) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1663,11 +1628,11 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoWifiPassSet) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeOneProtoServerSet) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
-//    EXPECT_CALL(statusMock, status(STATUS_UNKNOWN_SERVER_ADDRESS, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_MISSING_CREDENTIALS, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_INITIALIZED, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_CONFIG_MODE, _)).Times(1);
@@ -1716,26 +1681,19 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoServerSet) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(1);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(1);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1754,12 +1712,12 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoServerSet) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeOneProtoEmailSet) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
     EXPECT_CALL(statusMock, status(STATUS_UNKNOWN_SERVER_ADDRESS, _)).Times(1);
-//    EXPECT_CALL(statusMock, status(STATUS_MISSING_CREDENTIALS, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_INITIALIZED, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_CONFIG_MODE, _)).Times(1);
   }
@@ -1807,26 +1765,19 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoEmailSet) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_));
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18));
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(1);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(1);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -1849,8 +1800,6 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoFullCfgSetWifiEnabled) {
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
-//    EXPECT_CALL(statusMock, status(STATUS_UNKNOWN_SERVER_ADDRESS, _)).Times(1);
-//    EXPECT_CALL(statusMock, status(STATUS_MISSING_CREDENTIALS, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_INITIALIZED, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_REGISTER_IN_PROGRESS, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_REGISTERED_AND_READY, _)).Times(1);
@@ -1903,8 +1852,8 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoFullCfgSetWifiEnabled) {
 
   EXPECT_CALL(cfg, isSuplaCommProtocolEnabled()).WillRepeatedly(Return(true));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(1);
@@ -1966,6 +1915,8 @@ TEST_F(FullStartupWithConfig, OfflineModeOneProtoFullCfgSetWifiEnabled) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOnEmailSet) {
+  delete client;
+  client = nullptr;
   // Supla proto is disabled, so config from Supla (email) is ignored)
   int dummy = 0;
   MqttMock mqtt(&sd);
@@ -2031,8 +1982,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOnEmailSet) {
   EXPECT_CALL(cfg, getMqttQos()).WillRepeatedly(Return(0));
   EXPECT_CALL(cfg, isMqttAuthEnabled()).WillRepeatedly(Return(false));
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
@@ -2047,10 +1998,6 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOnEmailSet) {
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -2069,13 +2016,13 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOffMqttOnEmailSet) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOnEmailSet) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   MqttMock mqtt(&sd);
   sd.allowWorkInOfflineMode();
   {
     InSequence s;
     EXPECT_CALL(statusMock, status(STATUS_UNKNOWN_SERVER_ADDRESS, _)).Times(1);
-//    EXPECT_CALL(statusMock, status(STATUS_MISSING_CREDENTIALS, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_INITIALIZED, _)).Times(1);
     EXPECT_CALL(statusMock, status(STATUS_CONFIG_MODE, _)).Times(1);
   }
@@ -2135,26 +2082,19 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOnEmailSet) {
 
   EXPECT_CALL(mqtt, disconnect()).Times(1);
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_)).Times(1);
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18)).Times(1);
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(1);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(1);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -2173,7 +2113,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOnEmailSet) {
 }
 
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOffMqttServerSet) {
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   MqttMock mqtt(&sd);
   sd.allowWorkInOfflineMode();
   {
@@ -2239,26 +2180,19 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOffMqttServerSet) {
 
   EXPECT_CALL(mqtt, disconnect()).Times(0);
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_)).Times(1);
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18)).Times(1);
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));
@@ -2279,7 +2213,8 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOffMqttServerSet) {
 TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOnMqttPassSet) {
   // MQTT password is ignored in configuration check because it can't
   // be cleared on www.
-  int dummy = 0;
+  delete client;
+  client = nullptr;
   MqttMock mqtt(&sd);
   sd.allowWorkInOfflineMode();
   {
@@ -2357,26 +2292,19 @@ TEST_F(FullStartupWithConfig, OfflineModeSuplaOnMqttOnMqttPassSet) {
 
   EXPECT_CALL(mqtt, disconnect()).Times(0);
 
-  EXPECT_CALL(el1, onLoadConfig()).Times(1);
-  EXPECT_CALL(el2, onLoadConfig()).Times(1);
+  EXPECT_CALL(el1, onLoadConfig(_)).Times(1);
+  EXPECT_CALL(el2, onLoadConfig(_)).Times(1);
   EXPECT_CALL(el1, onInit()).Times(1);
   EXPECT_CALL(el2, onInit()).Times(1);
   EXPECT_CALL(el1, onRegistered(_)).Times(0);
   EXPECT_CALL(el2, onRegistered(_)).Times(0);
 
   EXPECT_CALL(timer, initTimers());
-  EXPECT_CALL(srpc, srpc_params_init(_)).Times(1);
-  EXPECT_CALL(srpc, srpc_init(_)).WillOnce(Return(&dummy));
-  EXPECT_CALL(srpc, srpc_set_proto_version(&dummy, 18)).Times(1);
 
   EXPECT_CALL(net, isReady()).Times(0);
   EXPECT_CALL(net, setup()).Times(0);
   EXPECT_CALL(net, iterate()).Times(AtLeast(0));
   EXPECT_CALL(srpc, srpc_iterate(_)).Times(0);
-  EXPECT_CALL(*client, stop()).Times(0);
-
-  EXPECT_CALL(*client, connected()).Times(0);
-  EXPECT_CALL(*client, connectImp(_, 2016)).Times(0);
   EXPECT_CALL(srpc, srpc_ds_async_registerdevice_e(_, _)).Times(0);
 
   EXPECT_CALL(el1, iterateAlways()).Times(AtLeast(1));

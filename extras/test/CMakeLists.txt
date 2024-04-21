@@ -58,7 +58,11 @@ file(GLOB TEST_SRC
   ToolsTests/*.cpp
   Mqtt/*.cpp
   Html/*.cpp
+  HvacTests/*.cpp
   RollerShutterTests/*.cpp
+  NotifTests/*.cpp
+  RelayTests/*.cpp
+  GpmTests/*.cpp
   )
 
 file(GLOB DOUBLE_SRC doubles/*.cpp)

@@ -26,6 +26,7 @@
 #include "esp_mqtt.h"
 
 Supla::Mutex *Supla::Protocol::EspMqtt::mutex = nullptr;
+Supla::Mutex *Supla::Protocol::EspMqtt::mutexEventHandler = nullptr;
 static Supla::Protocol::EspMqtt *espMqtt = nullptr;
 
 namespace Supla {
@@ -71,6 +72,8 @@ static void mqttEventHandler(void *handler_args,
                                int32_t eventId,
                                void *eventData) {
   SUPLA_LOG_DEBUG(" *** MQTT event handler enter");
+  Supla::AutoLock eventHandlerLock(Supla::Protocol::EspMqtt::mutexEventHandler);
+  SUPLA_LOG_DEBUG(" *** MQTT event handler waiting");
   Supla::AutoLock autoLock(Supla::Protocol::EspMqtt::mutex);
   SUPLA_LOG_DEBUG(
       " *** MQTT Event dispatched from event loop base=%s, eventId=%d",
@@ -104,7 +107,9 @@ static void mqttEventHandler(void *handler_args,
     case MQTT_EVENT_ERROR:
       SUPLA_LOG_DEBUG("MQTT_EVENT_ERROR");
       espMqtt->setConnectionError();
-      if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+      // MQTT_ERROR_TYPE_ESP_TLS  for backward compatibility
+      // On ESP32 it was replaced with MQTT_ERROR_TYPE_TCP_TRANSPORT
+      if (event->error_handle->error_type == MQTT_ERROR_TYPE_ESP_TLS) {
         if (lastError != Supla::EspMqttStatus_transportError) {
           lastError = Supla::EspMqttStatus_transportError;
           espMqtt->getSdc()->addLastStateLog(
@@ -114,10 +119,12 @@ static void mqttEventHandler(void *handler_args,
             event->error_handle->esp_tls_last_esp_err);
         SUPLA_LOG_DEBUG("Last tls stack error number: 0x%x",
                         event->error_handle->esp_tls_stack_err);
+#ifdef SUPLA_DEVICE_ESP32
         SUPLA_LOG_DEBUG(
             "Last captured errno : %d (%s)",
             event->error_handle->esp_transport_sock_errno,
             strerror(event->error_handle->esp_transport_sock_errno));
+#endif
       } else if (event->error_handle->error_type ==
                  MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
         switch (event->error_handle->connect_return_code) {
@@ -174,21 +181,34 @@ static void mqttEventHandler(void *handler_args,
 
 Supla::Protocol::EspMqtt::EspMqtt(SuplaDeviceClass *sdc)
   : Supla::Protocol::Mqtt(sdc) {
-    mutex = Supla::Mutex::Create();
-    espMqtt = this;
-  }
+  espMqtt = this;
+}
 
 Supla::Protocol::EspMqtt::~EspMqtt() {
   espMqtt = nullptr;
 }
 
 void Supla::Protocol::EspMqtt::onInit() {
+  if (mutex == nullptr) {
+    mutex = Supla::Mutex::Create();
+    mutex->lock();
+    mutexEventHandler = Supla::Mutex::Create();
+  }
   if (!isEnabled()) {
     return;
   }
   Supla::Protocol::Mqtt::onInit();
 
   esp_mqtt_client_config_t mqttCfg = {};
+
+  char clientId[MQTT_CLIENTID_MAX_SIZE] = {};
+  generateClientId(clientId);
+
+  MqttTopic lastWill(prefix);
+  lastWill = lastWill / "state" / "connected";
+
+#ifdef SUPLA_DEVICE_ESP32
+// ESP32 ESP-IDF setup
   mqttCfg.broker.address.hostname = server;
   mqttCfg.broker.address.port = port;
   if (useAuth) {
@@ -202,16 +222,32 @@ void Supla::Protocol::EspMqtt::onInit() {
   }
   mqttCfg.session.keepalive = sdc->getActivityTimeout();
 
-  MqttTopic lastWill(prefix);
-  lastWill = lastWill / "state" / "connected";
   mqttCfg.session.last_will.topic = lastWill.c_str();
   mqttCfg.session.last_will.msg = "false";
   mqttCfg.session.last_will.retain = 1;
 
-  char clientId[MQTT_CLIENTID_MAX_SIZE] = {};
-  generateClientId(clientId);
-
   mqttCfg.credentials.client_id = clientId;
+#else
+// ESP866 RTOS setup
+  mqttCfg.host = server;
+  mqttCfg.port = port;
+  if (useAuth) {
+    mqttCfg.username = user;
+    mqttCfg.password = password;
+  }
+  if (useTls) {
+    mqttCfg.transport = MQTT_TRANSPORT_OVER_SSL;
+  } else {
+    mqttCfg.transport = MQTT_TRANSPORT_OVER_TCP;
+  }
+  mqttCfg.keepalive = sdc->getActivityTimeout();
+
+  mqttCfg.lwt_topic = lastWill.c_str();
+  mqttCfg.lwt_msg = "false";
+  mqttCfg.lwt_retain = 1;
+
+  mqttCfg.client_id = clientId;
+#endif
 
   client = esp_mqtt_client_init(&mqttCfg);
   esp_mqtt_client_register_event(
@@ -249,12 +285,22 @@ void Supla::Protocol::EspMqtt::disconnect() {
     }
     esp_mqtt_client_destroy(client);
     onInit();
+    mutex->lock();
   }
   enterRegisteredAndReady = false;
 }
 
-bool Supla::Protocol::EspMqtt::iterate(uint64_t _millis) {
-  (void)(_millis);
+void Supla::Protocol::EspMqtt::publishChannelSetup(int channelNumber) {
+  if (channelNumber < 0 || channelNumber >= channelsCount) {
+    return;
+  }
+  publishHADiscovery(channelNumber);
+  subscribeChannel(channelNumber);
+  publishChannelState(channelNumber);
+  configChangedBit[channelNumber / 8] &= ~(1 << (channelNumber % 8));
+}
+
+bool Supla::Protocol::EspMqtt::iterate(uint32_t _millis) {
   if (!isEnabled()) {
     return false;
   }
@@ -264,8 +310,9 @@ bool Supla::Protocol::EspMqtt::iterate(uint64_t _millis) {
   if (started) {
     // this is used to synchronize event loop handling with SuplaDevice.iterate
     mutex->unlock();
-    delay(0);
+    mutexEventHandler->lock();
     mutex->lock();
+    mutexEventHandler->unlock();
 
     // below code is executed after mqtt event loop from ...
     if (!connected) {
@@ -279,9 +326,24 @@ bool Supla::Protocol::EspMqtt::iterate(uint64_t _millis) {
       lastStatusUpdateSec = uptime.getConnectionUptime();
 
       for (int i = 0; i < channelsCount; i++) {
-        publishHADiscovery(i);
-        subscribeChannel(i);
-        publishChannelState(i);
+        publishChannelSetup(i);
+      }
+    }
+
+    // check if any configChangedBit is set
+    bool anyConfigChanged = false;
+    for (int i = 0; i < sizeof(configChangedBit) / sizeof(configChangedBit[0]);
+         i++) {
+      if (configChangedBit[i] != 0) {
+        anyConfigChanged = true;
+        break;
+      }
+    }
+    if (anyConfigChanged) {
+      for (int i = 0; i < channelsCount; i++) {
+        if (configChangedBit[i / 8] & (1 << (i % 8))) {
+          publishChannelSetup(i);
+        }
       }
     }
 
@@ -320,6 +382,7 @@ void Supla::Protocol::EspMqtt::setRegisteredAndReady() {
   enterRegisteredAndReady = true;
   uptime.resetConnectionUptime();
   lastStatusUpdateSec = 0;
+  memset(configChangedBit, 0, sizeof(configChangedBit));
 }
 
 void Supla::Protocol::EspMqtt::publishImp(const char *topic,

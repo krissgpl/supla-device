@@ -23,36 +23,85 @@
 
 #include "protocol_layer.h"
 
+#define SUPLA_SRPC_CALCFG_RESULT_DONT_REPLY (-1)
+#define SUPLA_SRPC_CALCFG_RESULT_PENDING (-2)
+
 namespace Supla {
 
 class Client;
 
+namespace Device {
+class RemoteDeviceConfig;
+}  // namespace Device
+
 namespace Protocol {
+
+struct CalCfgResultPendingItem;
+
+class CalCfgResultPending {
+ public:
+  friend class SuplaSrpc;
+  void set(uint8_t channelNo, int32_t receiverId, int32_t command);
+  void clear(uint8_t channelNo);
+  CalCfgResultPendingItem *get(uint8_t channelNo);
+
+ protected:
+  CalCfgResultPending();
+  ~CalCfgResultPending();
+  CalCfgResultPendingItem *first = nullptr;
+};
 
 class SuplaSrpc : public ProtocolLayer {
  public:
+  static bool isSuplaSSLEnabled;
+
   explicit SuplaSrpc(SuplaDeviceClass *sdc, int version = 16);
   ~SuplaSrpc();
+
+  static bool isSuplaPublicServerConfigured();
+
+  void setNetworkClient(Supla::Client *newClient);
 
   void onInit() override;
   bool onLoadConfig() override;
   bool verifyConfig() override;
   bool isEnabled() override;
   void disconnect() override;
-  bool iterate(uint64_t _millis) override;
+  bool iterate(uint32_t _millis) override;
   bool isNetworkRestartRequested() override;
   uint32_t getConnectionFailTime() override;
   bool isRegisteredAndReady() override;
+  void initClient();
 
   void sendActionTrigger(uint8_t channelNumber, uint32_t actionId) override;
+  void sendRegisterNotification(
+      TDS_RegisterPushNotification *notification) override;
+  bool sendNotification(int context,
+                      const char *title,
+                      const char *message,
+                      int soundId) override;
   void getUserLocaltime() override;
   void sendChannelValueChanged(uint8_t channelNumber, char *value,
       unsigned char offline, uint32_t validityTimeSec) override;
   void sendExtendedChannelValueChanged(uint8_t channelNumber,
     TSuplaChannelExtendedValue *value) override;
-  void getChannelConfig(uint8_t channelNumber) override;
 
-  void *getSrpcPtr();
+  void getChannelConfig(uint8_t channelNumber, uint8_t configType) override;
+  bool setChannelConfig(uint8_t channelNumber,
+      _supla_int_t channelFunction, void *channelConfig, int size,
+      uint8_t configType) override;
+
+  bool setDeviceConfig(TSDS_SetDeviceConfig *deviceConfig) override;
+  bool setInitialCaption(uint8_t channelNumber, const char *caption) override;
+  void sendRemainingTimeValue(uint8_t channelNumber,
+                              uint32_t timeMs,
+                              uint8_t state,
+                              int32_t senderId) override;
+  void sendRemainingTimeValue(uint8_t channelNumber,
+                              uint32_t remainingTime,
+                              unsigned char state[SUPLA_CHANNELVALUE_SIZE],
+                              int32_t senderId,
+                              bool useSecondsInsteadOfMs) override;
 
   void onVersionError(TSDC_SuplaVersionError *versionError);
   void onRegisterResult(TSD_SuplaRegisterDeviceResult *register_device_result);
@@ -72,31 +121,49 @@ class SuplaSrpc : public ProtocolLayer {
   const char* getSuplaCACert();
   const char* getSupla3rdPartyCACert();
   bool isUpdatePending() override;
-  bool isSuplaPublicServerConfigured();
+  void handleDeviceConfig(TSDS_SetDeviceConfig *deviceConfig);
+  void handleSetDeviceConfigResult(TSDS_SetDeviceConfigResult *result);
 
   Supla::Client *client = nullptr;
+  CalCfgResultPending calCfgResultPending;
+  void sendPendingCalCfgResult(uint8_t channelNo,
+                               int32_t result,
+                               int32_t command,
+                               int dataSize = 0,
+                               void *data = nullptr);
+
+  static const char *configResultToCStr(int result);
 
  protected:
   bool ping();
+  void initializeSrpc();
+  void deinitializeSrpc();
 
-  void *srpc = nullptr;
-  int version = 0;
-  int8_t registered = 0;
+  uint8_t version = 0;
+  uint8_t activityTimeoutS = 30;
   uint8_t securityLevel = 0;
+  int8_t registered = 0;
   bool requestNetworkRestart = false;
-  uint32_t activityTimeoutS = 30;
-  _supla_int64_t lastPingTimeMs = 0;
-  uint64_t waitForIterate = 0;
-  uint64_t lastIterateTime = 0;
-  uint64_t lastResponseMs = 0;
-  uint64_t lastSentMs = 0;
-  uint16_t connectionFailCounter = 0;
   bool enabled = true;
+  bool setDeviceConfigReceivedAfterRegistration = false;
+  bool firstConnectionAttempt = true;
+  uint16_t connectionFailCounter = 0;
+
+  uint32_t lastPingTimeMs = 0;
+  uint32_t waitForIterate = 0;
+  uint32_t lastIterateTime = 0;
+  uint32_t lastResponseMs = 0;
+  uint32_t lastSentMs = 0;
 
   int port = -1;
 
   const char *suplaCACert = nullptr;
   const char *supla3rdPartyCACert = nullptr;
+  const char *selectedCertificate = nullptr;
+  void *srpc = nullptr;
+
+ private:
+  Supla::Device::RemoteDeviceConfig *remoteDeviceConfig = nullptr;
 };
 }  // namespace Protocol
 

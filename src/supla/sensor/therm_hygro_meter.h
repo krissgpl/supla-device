@@ -19,21 +19,46 @@
 #ifndef SRC_SUPLA_SENSOR_THERM_HYGRO_METER_H_
 #define SRC_SUPLA_SENSOR_THERM_HYGRO_METER_H_
 
-#include "thermometer.h"
+#include <supla/channel_element.h>
+#include <supla/sensor/thermometer_driver.h>
 
 #define HUMIDITY_NOT_AVAILABLE -1
 
 namespace Supla {
 namespace Sensor {
-class ThermHygroMeter : public Thermometer {
+class ThermHygroMeter : public ChannelElement {
  public:
   ThermHygroMeter();
+
+  void setRefreshIntervalMs(int intervalMs);
+
   void onInit() override;
-  void onLoadConfig() override;
+  void onLoadConfig(SuplaDeviceClass *) override;
   void iterateAlways() override;
+  void fillChannelConfig(void *channelConfig, int *size) override;
 
   virtual double getTemp();
   virtual double getHumi();
+
+  int16_t getTempInt16();
+  int16_t getHumiInt16();
+
+  uint8_t applyChannelConfig(TSD_ChannelConfig *result, bool local) override;
+
+  int16_t getConfiguredTemperatureCorrection();
+  int16_t getConfiguredHumidityCorrection();
+  void applyCorrectionsAndStoreIt(int32_t temperatureCorrection,
+                                  int32_t humidityCorrection,
+                                  bool local = false);
+
+ protected:
+  int16_t readCorrectionFromIndex(int index);
+  void setCorrectionAtIndex(int32_t correction, int index);
+  virtual void setTemperatureCorrection(int32_t correction);
+  virtual void setHumidityCorrection(int32_t correction);
+
+  uint32_t lastReadTime = 0;
+  uint16_t refreshIntervalMs = 10000;
 };
 
 };  // namespace Sensor

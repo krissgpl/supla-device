@@ -16,45 +16,67 @@
  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
+#include "rgbw_base.h"
+
+#include <math.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <supla/log_wrapper.h>
+#include <supla/control/button.h>
+#include <supla/storage/config.h>
+#include <supla/network/html/rgbw_button_parameters.h>
 
 #include "../storage/storage.h"
 #include "../time.h"
 #include "../tools.h"
-#include "rgbw_base.h"
-
-#define RGBW_STATE_ON_INIT_RESTORE -1
-#define RGBW_STATE_ON_INIT_OFF     0
-#define RGBW_STATE_ON_INIT_ON      1
+#include "supla/actions.h"
 
 #ifdef ARDUINO_ARCH_ESP32
-int esp32PwmChannelCouner = 0;
+int esp32PwmChannelCounter = 0;
 #endif
 
 namespace Supla {
 namespace Control {
 
-RGBWBase::RGBWBase()
-    : buttonStep(5),
-      curRed(0),
-      curGreen(255),
-      curBlue(0),
-      curColorBrightness(0),
-      curBrightness(0),
-      lastColorBrightness(100),
-      lastBrightness(100),
-      defaultDimmedBrightness(20),
-      dimIterationDirection(false),
-      fadeEffect(500),
-      hwRed(-1),
-      hwGreen(0),
-      hwBlue(0),
-      hwColorBrightness(0),
-      hwBrightness(0),
-      stateOnInit(RGBW_STATE_ON_INIT_RESTORE),
-      minIterationBrightness(1) {
+GeometricBrightnessAdjuster::GeometricBrightnessAdjuster(double power,
+                                                         int offset,
+                                                         int maxHwValue)
+    : power(power), offset(offset), maxHwValue(maxHwValue) {
+}
+
+int GeometricBrightnessAdjuster::adjustBrightness(int input) {
+  if (input == 0) {
+    return 0;
+  }
+  double result = (input + offset) / (100.0 + offset);
+  result = pow(result, power);
+  result = result * maxHwValue;
+  if (result > maxHwValue) {
+    result = maxHwValue;
+  }
+  if (result < 0) {
+    result = 0;
+  }
+  return round(result);
+}
+
+void GeometricBrightnessAdjuster::setMaxHwValue(int maxHwValue) {
+  this->maxHwValue = maxHwValue;
+}
+
+
+RGBWBase::RGBWBase() {
   channel.setType(SUPLA_CHANNELTYPE_DIMMERANDRGBLED);
   channel.setDefault(SUPLA_CHANNELFNC_DIMMERANDRGBLIGHTING);
+  channel.setFlag(SUPLA_CHANNEL_FLAG_RGBW_COMMANDS_SUPPORTED);
+}
+
+void RGBWBase::setBrightnessAdjuster(BrightnessAdjuster *adjuster) {
+  if (brightnessAdjuster) {
+    delete brightnessAdjuster;
+  }
+  brightnessAdjuster = adjuster;
+  brightnessAdjuster->setMaxHwValue(maxHwValue);
 }
 
 void RGBWBase::setRGBW(int red,
@@ -62,7 +84,8 @@ void RGBWBase::setRGBW(int red,
                        int blue,
                        int colorBrightness,
                        int brightness,
-                       bool toggle) {
+                       bool toggle,
+                       bool instant) {
   if (toggle) {
     lastMsgReceivedMs = 1;
   } else {
@@ -98,6 +121,12 @@ void RGBWBase::setRGBW(int red,
     curBrightness = brightness;
   }
 
+  this->instant = instant;
+  resetDisance = true;
+
+  SUPLA_LOG_DEBUG("RGBW: %d,%d,%d,%d,%d", curRed, curGreen, curBlue,
+                  curColorBrightness, curBrightness);
+
   // Schedule save in 5 s after state change
   Supla::Storage::ScheduleSave(5000);
 }
@@ -112,15 +141,137 @@ void RGBWBase::iterateAlways() {
 }
 
 int RGBWBase::handleNewValueFromServer(TSD_SuplaChannelNewValue *newValue) {
-  uint8_t toggle = static_cast<uint8_t>(newValue->value[5]);
+  uint8_t command = static_cast<uint8_t>(newValue->value[6]);
+  uint8_t toggleOnOff = static_cast<uint8_t>(newValue->value[5]);
   uint8_t red = static_cast<uint8_t>(newValue->value[4]);
   uint8_t green = static_cast<uint8_t>(newValue->value[3]);
   uint8_t blue = static_cast<uint8_t>(newValue->value[2]);
   uint8_t colorBrightness = static_cast<uint8_t>(newValue->value[1]);
   uint8_t brightness = static_cast<uint8_t>(newValue->value[0]);
 
-  setRGBW(red, green, blue, colorBrightness, brightness, toggle > 0);
+  SUPLA_LOG_DEBUG(
+      "RGBW: red=%d, green=%d, blue=%d, colorBrightness=%d, "
+      "brightness=%d, command=%d, toggleOnOff=%d",
+      red,
+      green,
+      blue,
+      colorBrightness,
+      brightness,
+      command,
+      toggleOnOff);
 
+  if (brightness > 100) {
+    brightness = 100;
+  }
+  if (colorBrightness > 100) {
+    colorBrightness = 100;
+  }
+
+  switch (command) {
+    case RGBW_COMMAND_NOT_SET: {
+      setRGBW(red, green, blue, colorBrightness, brightness, toggleOnOff > 0);
+      break;
+    }
+    case RGBW_COMMAND_TURN_ON_DIMMER: {
+      setRGBW(-1, -1, -1, -1, lastBrightness);
+      break;
+    }
+    case RGBW_COMMAND_TURN_OFF_DIMMER: {
+      setRGBW(-1, -1, -1, -1, 0);
+      break;
+    }
+    case RGBW_COMMAND_TOGGLE_DIMMER: {
+      setRGBW(-1, -1, -1, -1, curBrightness > 0 ? 0 : lastBrightness);
+      break;
+    }
+    case RGBW_COMMAND_TURN_ON_RGB: {
+      setRGBW(-1, -1, -1, lastColorBrightness, -1);
+      break;
+    }
+    case RGBW_COMMAND_TURN_OFF_RGB: {
+      setRGBW(-1, -1, -1, 0, -1);
+      break;
+    }
+    case RGBW_COMMAND_TOGGLE_RGB: {
+      setRGBW(-1, -1, -1, curColorBrightness > 0 ? 0 : lastColorBrightness, -1);
+      break;
+    }
+    case RGBW_COMMAND_TURN_ON_ALL: {
+      turnOn();
+      break;
+    }
+    case RGBW_COMMAND_TURN_OFF_ALL: {
+      turnOff();
+      break;
+    }
+    case RGBW_COMMAND_TOGGLE_ALL: {
+      toggle();
+      break;
+    }
+    case RGBW_COMMAND_SET_BRIGHTNESS_WITHOUT_TURN_ON: {
+      if (curBrightness > 0) {
+        setRGBW(-1, -1, -1, -1, brightness);
+      } else {
+        lastBrightness = brightness;
+      }
+      break;
+    }
+    case RGBW_COMMAND_SET_COLOR_BRIGHTNESS_WITHOUT_TURN_ON: {
+      if (curColorBrightness > 0) {
+        setRGBW(-1, -1, -1, colorBrightness, -1);
+      } else {
+        lastColorBrightness = colorBrightness;
+      }
+      break;
+    }
+    case RGBW_COMMAND_SET_RGB_WITHOUT_TURN_ON: {
+      setRGBW(red, green, blue, -1, -1);
+      break;
+    }
+    case RGBW_COMMAND_START_ITERATE_DIMMER: {
+      lastAutoIterateStartTimestamp = millis();
+      if (autoIterateMode == AutoIterateMode::OFF) {
+        autoIterateMode = AutoIterateMode::DIMMER;
+      } else {
+        autoIterateMode = AutoIterateMode::ALL;
+      }
+      break;
+    }
+    case RGBW_COMMAND_START_ITERATE_RGB: {
+      lastAutoIterateStartTimestamp = millis();
+      if (autoIterateMode == AutoIterateMode::OFF) {
+        autoIterateMode = AutoIterateMode::RGB;
+      } else {
+        autoIterateMode = AutoIterateMode::ALL;
+      }
+      break;
+    }
+    case RGBW_COMMAND_START_ITERATE_ALL: {
+      autoIterateMode = AutoIterateMode::ALL;
+      lastAutoIterateStartTimestamp = millis();
+      break;
+    }
+    case RGBW_COMMAND_STOP_ITERATE_DIMMER: {
+      if (autoIterateMode == AutoIterateMode::DIMMER) {
+        autoIterateMode = AutoIterateMode::OFF;
+      } else if (autoIterateMode == AutoIterateMode::ALL) {
+        autoIterateMode = AutoIterateMode::RGB;
+      }
+      break;
+    }
+    case RGBW_COMMAND_STOP_ITERATE_RGB: {
+      if (autoIterateMode == AutoIterateMode::RGB) {
+        autoIterateMode = AutoIterateMode::OFF;
+      } else if (autoIterateMode == AutoIterateMode::ALL) {
+        autoIterateMode = AutoIterateMode::DIMMER;
+      }
+      break;
+    }
+    case RGBW_COMMAND_STOP_ITERATE_ALL: {
+      autoIterateMode = AutoIterateMode::OFF;
+      break;
+    }
+  }
   return -1;
 }
 
@@ -132,11 +283,23 @@ void RGBWBase::turnOff() {
 }
 
 void RGBWBase::toggle() {
-  setRGBW(-1,
-          -1,
-          -1,
-          curColorBrightness > 0 ? 0 : lastColorBrightness,
-          curBrightness > 0 ? 0 : lastBrightness);
+  if (isOn()) {
+    turnOff();
+  } else {
+    turnOn();
+  }
+}
+
+bool RGBWBase::isOn() {
+  return isOnRGB() || isOnW();
+}
+
+bool RGBWBase::isOnW() {
+  return curBrightness > 0;
+}
+
+bool RGBWBase::isOnRGB() {
+  return curColorBrightness > 0;
 }
 
 uint8_t RGBWBase::addWithLimit(int value, int addition, int limit) {
@@ -377,7 +540,9 @@ void RGBWBase::iterateDimmerRGBW(int rgbStep, int wStep) {
           -1,
           -1,
           addWithLimit(curColorBrightness, rgbStep, 100),
-          addWithLimit(curBrightness, wStep, 100));
+          addWithLimit(curBrightness, wStep, 100),
+          false,
+          true);
 }
 
 void RGBWBase::setStep(int step) {
@@ -392,120 +557,328 @@ void RGBWBase::setFadeEffectTime(int timeMs) {
   fadeEffect = timeMs;
 }
 
-void RGBWBase::onTimer() {
-  uint64_t timeDiff = millis() - lastTick;
-  lastTick = millis();
+int RGBWBase::adjustBrightness(int value) {
+  if (brightnessAdjuster) {
+    return brightnessAdjuster->adjustBrightness(value);
+  }
+  return adjustRange(value, 0, 100, 0, maxHwValue);
+}
 
-  if (timeDiff > 0) {
-    double divider = 1.0 * fadeEffect / timeDiff;
-    if (divider <= 0) {
+int RGBWBase::getStep(int step, int target, int current, int distance) const {
+  (void)(distance);
+  if (step && target != current) {
+    int result = step;
+    if (target > current) {
+      if (current + result > target) {
+        result = target - current;
+      }
+      return result;
+    } else if (target < current) {
+      result = -step;
+      if (current + result < target) {
+        result = target - current;
+      }
+      return result;
+    }
+  }
+  return 0;
+}
+
+bool RGBWBase::calculateAndUpdate(int targetValue,
+                                  uint16_t *hwValue,
+                                  int distance,
+                                  uint32_t *lastChangeMs) const {
+  if (targetValue != *hwValue) {
+    uint32_t timeDiff = millis() - *lastChangeMs;
+    if (timeDiff == 0) {
+      return false;
+    }
+
+    int currentFadeEffectTime = fadeEffect;
+    if (distance < maxHwValue / 10) {
+      currentFadeEffectTime = fadeEffect / 3;
+    }
+
+    double divider = 1.0 * currentFadeEffectTime / timeDiff;
+    if (divider <= 1) {
       divider = 1;
     }
 
-    double step = 1023 / divider;
-    bool valueChanged = false;
+    int step = distance / divider;
     if (step < 1) {
       step = 1;
     }
 
-    int curRedAdj = adjustRange(curRed, 0, 255, 0, 1023);
-    int curGreenAdj = adjustRange(curGreen, 0, 255, 0, 1023);
-    int curBlueAdj = adjustRange(curBlue, 0, 255, 0, 1023);
-    int curColorBrightnessAdj =
-        adjustRange(curColorBrightness, 0, 100, 0, 1023);
-    int curBrightnessAdj = adjustRange(curBrightness, 0, 100, 0, 1023);
+    int valueStep = getStep(step, targetValue, *hwValue, distance);
+    if (valueStep != 0) {
+      *hwValue += valueStep;
+      *lastChangeMs = millis();
+      return true;
+    }
+  } else {
+    *lastChangeMs = millis();
+  }
+  return false;
+}
 
-    if (curRedAdj > hwRed) {
-      valueChanged = true;
-      hwRed += step;
-      if (hwRed > curRedAdj) {
-        hwRed = curRedAdj;
-      }
-    } else if (curRedAdj < hwRed) {
-      valueChanged = true;
-      hwRed -= step;
-      if (hwRed < curRedAdj) {
-        hwRed = curRedAdj;
+void RGBWBase::onFastTimer() {
+  if (lastTick == 0) {
+    lastTick = millis();
+    lastChangeRedMs = millis();
+    lastChangeGreenMs = millis();
+    lastChangeBlueMs = millis();
+    lastChangeBrightnessMs = millis();
+    lastChangeColorBrightnessMs = millis();
+    return;
+  }
+  uint32_t timeDiff = millis() - lastTick;
+
+  if (autoIterateMode != AutoIterateMode::OFF &&
+      millis() - lastAutoIterateStartTimestamp < 10000) {
+    if (millis() - lastIterateDimmerTimestamp >= 35) {
+      // lastIterateDimmerTimestamp is updated in handleAction calls below
+      switch (autoIterateMode) {
+        case AutoIterateMode::DIMMER: {
+          handleAction(0, Supla::ITERATE_DIM_W);
+          break;
+        }
+        case AutoIterateMode::RGB: {
+          handleAction(0, Supla::ITERATE_DIM_RGB);
+          break;
+        }
+        case AutoIterateMode::ALL: {
+          handleAction(0, Supla::ITERATE_DIM_ALL);
+          break;
+        }
+        default:
+          break;
       }
     }
+  } else {
+    // disable auto iterate after 10 s timeout
+    autoIterateMode = AutoIterateMode::OFF;
+  }
 
-    if (curGreenAdj > hwGreen) {
-      valueChanged = true;
-      hwGreen += step;
-      if (hwGreen > curGreenAdj) {
-        hwGreen = curGreenAdj;
-      }
-    } else if (curGreenAdj < hwGreen) {
-      valueChanged = true;
-      hwGreen -= step;
-      if (hwGreen < curGreenAdj) {
-        hwGreen = curGreenAdj;
-      }
+  if (timeDiff > 0) {
+    lastTick = millis();
+
+    // target values are in 0..maxHwValue range
+    int targetRed = adjustRange(curRed, 0, 255, 0, maxHwValue);
+    int targetGreen = adjustRange(curGreen, 0, 255, 0, maxHwValue);
+    int targetBlue = adjustRange(curBlue, 0, 255, 0, maxHwValue);
+    int targetColorBrightness = adjustBrightness(curColorBrightness);
+    int targetBrightness = adjustBrightness(curBrightness);
+
+    if (resetDisance) {
+      resetDisance = false;
+
+      redDistance = abs(targetRed - hwRed);
+      greenDistance = abs(targetGreen - hwGreen);
+      blueDistance = abs(targetBlue - hwBlue);
+      colorBrightnessDistance = abs(targetColorBrightness - hwColorBrightness);
+      brightnessDistance = abs(targetBrightness - hwBrightness);
     }
 
-    if (curBlueAdj > hwBlue) {
+    if (instant) {
+      hwRed = targetRed;
+      hwGreen = targetGreen;
+      hwBlue = targetBlue;
+      hwColorBrightness = targetColorBrightness;
+      hwBrightness = targetBrightness;
       valueChanged = true;
-      hwBlue += step;
-      if (hwBlue > curBlueAdj) {
-        hwBlue = curBlueAdj;
+      instant = false;
+    } else {
+      if (calculateAndUpdate(
+              targetRed, &hwRed, redDistance, &lastChangeRedMs)) {
+        valueChanged = true;
       }
-    } else if (curBlueAdj < hwBlue) {
-      valueChanged = true;
-      hwBlue -= step;
-      if (hwBlue < curBlueAdj) {
-        hwBlue = curBlueAdj;
+      if (calculateAndUpdate(
+              targetGreen, &hwGreen, greenDistance, &lastChangeGreenMs)) {
+        valueChanged = true;
       }
-    }
-
-    if (curColorBrightnessAdj > hwColorBrightness) {
-      valueChanged = true;
-      hwColorBrightness += step;
-      if (hwColorBrightness > curColorBrightnessAdj) {
-        hwColorBrightness = curColorBrightnessAdj;
+      if (calculateAndUpdate(
+              targetBlue, &hwBlue, blueDistance, &lastChangeBlueMs)) {
+        valueChanged = true;
       }
-    } else if (curColorBrightnessAdj < hwColorBrightness) {
-      valueChanged = true;
-      hwColorBrightness -= step;
-      if (hwColorBrightness < curColorBrightnessAdj) {
-        hwColorBrightness = curColorBrightnessAdj;
+      if (calculateAndUpdate(targetColorBrightness,
+                             &hwColorBrightness,
+                             colorBrightnessDistance,
+                             &lastChangeColorBrightnessMs)) {
+        valueChanged = true;
       }
-    }
-
-    if (curBrightnessAdj > hwBrightness) {
-      valueChanged = true;
-      hwBrightness += step;
-      if (hwBrightness > curBrightnessAdj) {
-        hwBrightness = curBrightnessAdj;
-      }
-    } else if (curBrightnessAdj < hwBrightness) {
-      valueChanged = true;
-      hwBrightness -= step;
-      if (hwBrightness < curBrightnessAdj) {
-        hwBrightness = curBrightnessAdj;
+      if (calculateAndUpdate(targetBrightness,
+                             &hwBrightness,
+                             brightnessDistance,
+                             &lastChangeBrightnessMs)) {
+        valueChanged = true;
       }
     }
 
     if (valueChanged) {
-      uint32_t adjColorBrightness = adjustRange(
-          hwColorBrightness, 0, 1023, minColorBrightness, maxColorBrightness);
-      uint32_t adjBrightness =
-          adjustRange(hwBrightness, 0, 1023, minBrightness, maxBrightness);
+      uint32_t adjColorBrightness = hwColorBrightness;
+      if (hwColorBrightness > 0) {
+        adjColorBrightness = adjustRange(adjColorBrightness,
+                                         1,
+                                         maxHwValue,
+                                         minColorBrightness,
+                                         maxColorBrightness);
+      } else {
+        hwColorBrightness = 0;
+      }
+      uint32_t adjBrightness = hwBrightness;
+      if (hwBrightness > 0) {
+        adjBrightness = adjustRange(
+            adjBrightness, 1, maxHwValue, minBrightness, maxBrightness);
+      } else {
+        hwBrightness = 0;
+      }
       setRGBWValueOnDevice(
           hwRed, hwGreen, hwBlue, adjColorBrightness, adjBrightness);
+      valueChanged = false;
     }
   }
 }
 
 void RGBWBase::onInit() {
+  if (attachedButton) {
+    SUPLA_LOG_DEBUG("RGBWBase[%d] configuring attachedButton, control type %d",
+                    getChannel()->getChannelNumber(), buttonControlType);
+    if (attachedButton->isMonostable()) {
+      SUPLA_LOG_DEBUG("RGBWBase[%d] configuring monostable button",
+                      getChannel()->getChannelNumber());
+      switch (buttonControlType) {
+        case BUTTON_FOR_RGBW: {
+          attachedButton->addAction(
+              Supla::ITERATE_DIM_ALL, this, Supla::ON_HOLD);
+          attachedButton->addAction(Supla::TOGGLE, this, Supla::ON_CLICK_1);
+          break;
+        }
+        case BUTTON_FOR_RGB: {
+          attachedButton->addAction(
+              Supla::ITERATE_DIM_RGB, this, Supla::ON_HOLD);
+          attachedButton->addAction(Supla::TOGGLE_RGB, this, Supla::ON_CLICK_1);
+          break;
+        }
+        case BUTTON_FOR_W: {
+          attachedButton->addAction(Supla::ITERATE_DIM_W, this, Supla::ON_HOLD);
+          attachedButton->addAction(Supla::TOGGLE_W, this, Supla::ON_CLICK_1);
+          break;
+        }
+        case BUTTON_NOT_USED: {
+          break;
+        }
+      }
+    } else if (attachedButton->isBistable()) {
+      SUPLA_LOG_DEBUG("RGBWBase[%d] configuring bistable button",
+                      getChannel()->getChannelNumber());
+      switch (buttonControlType) {
+        case BUTTON_FOR_RGBW: {
+          attachedButton->addAction(
+              Supla::TOGGLE, this, Supla::CONDITIONAL_ON_CHANGE);
+          break;
+        }
+        case BUTTON_FOR_RGB: {
+          attachedButton->addAction(
+              Supla::TOGGLE_RGB, this, Supla::CONDITIONAL_ON_CHANGE);
+          break;
+        }
+        case BUTTON_FOR_W: {
+          attachedButton->addAction(
+              Supla::TOGGLE_W, this, Supla::CONDITIONAL_ON_CHANGE);
+          break;
+        }
+        case BUTTON_NOT_USED: {
+          break;
+        }
+      }
+    } else if (attachedButton->isMotionSensor()) {
+      SUPLA_LOG_DEBUG("RGBWBase[%d] configuring motion sensor button",
+                      getChannel()->getChannelNumber());
+      switch (buttonControlType) {
+        case BUTTON_FOR_RGBW: {
+          attachedButton->addAction(Supla::TURN_ON, this, Supla::ON_PRESS);
+          attachedButton->addAction(Supla::TURN_OFF, this, Supla::ON_RELEASE);
+          break;
+        }
+        case BUTTON_FOR_RGB: {
+          attachedButton->addAction(Supla::TURN_ON_RGB, this, Supla::ON_PRESS);
+          attachedButton->addAction(
+              Supla::TURN_OFF_RGB, this, Supla::ON_RELEASE);
+          break;
+        }
+        case BUTTON_FOR_W: {
+          attachedButton->addAction(Supla::TURN_ON_W, this, Supla::ON_PRESS);
+          attachedButton->addAction(Supla::TURN_OFF_W, this, Supla::ON_RELEASE);
+          break;
+        }
+        case BUTTON_NOT_USED: {
+          break;
+        }
+      }
+      if (attachedButton->getLastState() == Supla::Control::PRESSED) {
+        SUPLA_LOG_DEBUG("RGBWBase[%d] button pressed",
+                        getChannel()->getChannelNumber());
+        switch (buttonControlType) {
+          case BUTTON_FOR_RGBW: {
+            curColorBrightness = lastColorBrightness;
+            curBrightness = lastBrightness;
+            break;
+          }
+          case BUTTON_FOR_RGB: {
+            curColorBrightness = lastColorBrightness;
+            break;
+          }
+          case BUTTON_FOR_W: {
+            curBrightness = lastBrightness;
+            break;
+          }
+          case BUTTON_NOT_USED: {
+            break;
+          }
+        }
+      } else {
+        SUPLA_LOG_DEBUG("RGBWBase[%d] button not pressed",
+                        getChannel()->getChannelNumber());
+        switch (buttonControlType) {
+          case BUTTON_FOR_RGBW: {
+            curColorBrightness = 0;
+            curBrightness = 0;
+            break;
+          }
+          case BUTTON_FOR_RGB: {
+            curColorBrightness = 0;
+            break;
+          }
+          case BUTTON_FOR_W: {
+            curBrightness = 0;
+            break;
+          }
+          case BUTTON_NOT_USED: {
+            break;
+          }
+        }
+      }
+    } else {
+      SUPLA_LOG_WARNING("RGBWBase[%d] unknown button type",
+                        getChannel()->getChannelNumber());
+    }
+  }
+
+  bool toggle = false;
   if (stateOnInit == RGBW_STATE_ON_INIT_ON) {
+    SUPLA_LOG_DEBUG("RGBWBase[%d] TURN on onInit",
+                    getChannel()->getChannelNumber());
     curColorBrightness = 100;
     curBrightness = 100;
+    toggle = true;
   } else if (stateOnInit == RGBW_STATE_ON_INIT_OFF) {
+    SUPLA_LOG_DEBUG("RGBWBase[%d] TURN off onInit",
+                    getChannel()->getChannelNumber());
     curColorBrightness = 0;
     curBrightness = 0;
   }
 
-  setRGBW(curRed, curGreen, curBlue, curColorBrightness, curBrightness);
+  setRGBW(curRed, curGreen, curBlue, curColorBrightness, curBrightness, toggle);
 }
 
 void RGBWBase::onSaveState() {
@@ -543,6 +916,12 @@ void RGBWBase::onLoadState() {
                             sizeof(lastColorBrightness));
   Supla::Storage::ReadState((unsigned char *)&lastBrightness,
                             sizeof(lastBrightness));
+
+  SUPLA_LOG_DEBUG(
+      "RGBWBase[%d] loaded state: red=%d, green=%d, blue=%d, "
+      "colorBrightness=%d, brightness=%d",
+      getChannel()->getChannelNumber(), curRed, curGreen, curBlue,
+      curColorBrightness, curBrightness);
 }
 
 RGBWBase &RGBWBase::setDefaultStateOn() {
@@ -573,8 +952,8 @@ RGBWBase &RGBWBase::setBrightnessLimits(int min, int max) {
   if (min < 0) {
     min = 0;
   }
-  if (max > 1023) {
-    max = 1023;
+  if (max > maxHwValue) {
+    setMaxHwValue(maxHwValue);
   }
   if (min > max) {
     min = max;
@@ -587,8 +966,8 @@ RGBWBase &RGBWBase::setColorBrightnessLimits(int min, int max) {
   if (min < 0) {
     min = 0;
   }
-  if (max > 1023) {
-    max = 1023;
+  if (max > maxHwValue) {
+    setMaxHwValue(maxHwValue);
   }
   if (min > max) {
     min = max;
@@ -597,6 +976,62 @@ RGBWBase &RGBWBase::setColorBrightnessLimits(int min, int max) {
   maxColorBrightness = max;
   return *this;
 }
+
+void RGBWBase::attach(Supla::Control::Button *button) {
+  attachedButton = button;
+}
+
+void RGBWBase::onLoadConfig(SuplaDeviceClass *sdc) {
+  (void)(sdc);
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (cfg) {
+    char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+    Supla::Config::generateKey(
+        key, getChannel()->getChannelNumber(), Supla::Html::RgbwButtonTag);
+    int32_t rgbwButtonControlType = 0;
+    // try to read RGBW button control type from channel specific parameter
+    // and if it is missgin, read gloal value setting
+    if (!cfg->getInt32(key, &rgbwButtonControlType)) {
+      cfg->getInt32(Supla::Html::RgbwButtonTag, &rgbwButtonControlType);
+    }
+    if (rgbwButtonControlType >= 0 && rgbwButtonControlType <= 4) {
+      buttonControlType = static_cast<ButtonControlType>(rgbwButtonControlType);
+    }
+  }
+  SUPLA_LOG_DEBUG("RGBWBase[%d] button control type: %d",
+                  getChannel()->getChannelNumber(),
+                  buttonControlType);
+}
+
+void RGBWBase::fillSuplaChannelNewValue(TSD_SuplaChannelNewValue *value) {
+  if (value == nullptr) {
+    return;
+  }
+
+  value->value[0] = curBrightness;
+  value->value[1] = curColorBrightness;
+  value->value[2] = curBlue;
+  value->value[3] = curGreen;
+  value->value[4] = curRed;
+  SUPLA_LOG_DEBUG("RGBW fill: %d,%d,%d,%d,%d", curRed, curGreen, curBlue,
+                  curColorBrightness, curBrightness);
+}
+
+int RGBWBase::getCurrentDimmerBrightness() const {
+  return curBrightness;
+}
+
+int RGBWBase::getCurrentRGBBrightness() const {
+  return curColorBrightness;
+}
+
+void RGBWBase::setMaxHwValue(int newMaxHwValue) {
+  maxHwValue = newMaxHwValue;
+  if (brightnessAdjuster) {
+    brightnessAdjuster->setMaxHwValue(newMaxHwValue);
+  }
+}
+
 
 };  // namespace Control
 };  // namespace Supla

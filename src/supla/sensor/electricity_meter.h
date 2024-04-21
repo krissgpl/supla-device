@@ -21,9 +21,9 @@
 
 #include <supla-common/srpc.h>
 #include <supla/action_handler.h>
+#include <supla/element_with_channel_actions.h>
 
 #include "../channel_extended.h"
-#include "../element.h"
 #include "../local_action.h"
 
 #define MAX_PHASES 3
@@ -33,15 +33,38 @@ namespace Sensor {
 
 #pragma pack(push, 1)
 struct EnergyMeasurmentsStorage {
-  _supla_int64_t totalFwdActEnergy = 0;
-  _supla_int64_t totalRvrActEnergy = 0;
-  _supla_int64_t totalFwdReactEnergy = 0;
-  _supla_int64_t totalRvrReactEnergy = 0;
+  union {
+    _supla_int64_t totalFwdActEnergy = 0;
+    _supla_int64_t fwdActEnergy;
+  };
+  union {
+    _supla_int64_t totalRvrActEnergy = 0;
+    _supla_int64_t rvrActEnergy;
+  };
+  union {
+    _supla_int64_t totalFwdReactEnergy = 0;
+    _supla_int64_t fwdReactEnergy;
+  };
+  union {
+    _supla_int64_t totalRvrReactEnergy = 0;
+    _supla_int64_t rvrReactEnergy;
+  };
+};
+
+struct VectorBalancedEnergyStorage {
+  _supla_int64_t fwdActEnergyBalanced = 0;
+  _supla_int64_t rvrActEnergyBalanced = 0;
 };
 #pragma pack(pop)
 
-class ElectricityMeter :
-  public Element, public LocalAction, public ActionHandler {
+#define EM_VAR_ALL_ENERGY_REGISTERS                                  \
+  (EM_VAR_FORWARD_ACTIVE_ENERGY | EM_VAR_REVERSE_ACTIVE_ENERGY |     \
+  EM_VAR_FORWARD_REACTIVE_ENERGY | EM_VAR_REVERSE_REACTIVE_ENERGY |  \
+  EM_VAR_FORWARD_ACTIVE_ENERGY_BALANCED |                            \
+  EM_VAR_REVERSE_ACTIVE_ENERGY_BALANCED)
+
+class ElectricityMeter : public ElementWithChannelActions,
+                         public ActionHandler {
  public:
   ElectricityMeter();
 
@@ -59,6 +82,14 @@ class ElectricityMeter :
   // energy in 0.00001 kWh
   void setRvrReactEnergy(int phase, unsigned _supla_int64_t energy);
 
+  // Vector balanced forward energy
+  // energy in 0.00001 kWh
+  void setFwdBalancedEnergy(uint64_t energy);
+
+  // Vector balanced reverse energy
+  // energy in 0.00001 kWh
+  void setRvrBalancedEnergy(uint64_t energy);
+
   // voltage in 0.01 V
   void setVoltage(int phase, unsigned _supla_int16_t voltage);
 
@@ -69,13 +100,13 @@ class ElectricityMeter :
   void setFreq(unsigned _supla_int16_t freq);
 
   // power in 0.00001 W
-  void setPowerActive(int phase, _supla_int_t power);
+  void setPowerActive(int phase, int64_t power);
 
   // power in 0.00001 var
-  void setPowerReactive(int phase, _supla_int_t power);
+  void setPowerReactive(int phase, int64_t power);
 
   // power in 0.00001 VA
-  void setPowerApparent(int phase, _supla_int_t power);
+  void setPowerApparent(int phase, int64_t power);
 
   // power in 0.001
   void setPowerFactor(int phase, _supla_int_t powerFactor);
@@ -88,6 +119,12 @@ class ElectricityMeter :
 
   // energy 1 == 0.00001 kWh
   unsigned _supla_int64_t getRvrActEnergy(int phase);
+
+  // energy 1 == 0.00001 kWh
+  uint64_t getFwdBalancedActEnergy();
+
+  // energy 1 == 0.00001 kWh
+  uint64_t getRvrBalancedActEnergy();
 
   // energy 1 == 0.00001 kWh
   unsigned _supla_int64_t getFwdReactEnergy(int phase);
@@ -105,13 +142,13 @@ class ElectricityMeter :
   unsigned _supla_int16_t getFreq();
 
   // power 1 == 0.00001 W
-  _supla_int_t getPowerActive(int phase);
+  int64_t getPowerActive(int phase);
 
   // power 1 == 0.00001 var
-  _supla_int_t getPowerReactive(int phase);
+  int64_t getPowerReactive(int phase);
 
   // power 1 == 0.00001 VA
-  _supla_int_t getPowerApparent(int phase);
+  int64_t getPowerApparent(int phase);
 
   // power 1 == 0.001
   _supla_int_t getPowerFactor(int phase);
@@ -129,6 +166,10 @@ class ElectricityMeter :
     getTotalFwdActEnergy(const TElectricityMeter_ExtendedValue_V2 &emValue);
 
   // energy 1 == 0.00001 kWh
+  static uint64_t
+    getFwdBalancedActEnergy(const TElectricityMeter_ExtendedValue_V2 &emValue);
+
+  // energy 1 == 0.00001 kWh
   static unsigned _supla_int64_t
     getRvrActEnergy(const TElectricityMeter_ExtendedValue_V2 &emValue,
         int phase);
@@ -136,6 +177,10 @@ class ElectricityMeter :
   // energy 1 == 0.00001 kWh
   static unsigned _supla_int64_t
     getTotalRvrActEnergy(const TElectricityMeter_ExtendedValue_V2 &emValue);
+
+  // energy 1 == 0.00001 kWh
+  static uint64_t
+    getRvrBalancedActEnergy(const TElectricityMeter_ExtendedValue_V2 &emValue);
 
   // energy 1 == 0.00001 kWh
   static unsigned _supla_int64_t
@@ -160,15 +205,15 @@ class ElectricityMeter :
     getFreq(const TElectricityMeter_ExtendedValue_V2 &emValue);
 
   // power 1 == 0.00001 W
-  static _supla_int_t getPowerActive(
+  static int64_t getPowerActive(
       const TElectricityMeter_ExtendedValue_V2 &emValue, int phase);
 
   // power 1 == 0.00001 var
-  static _supla_int_t getPowerReactive(
+  static int64_t getPowerReactive(
       const TElectricityMeter_ExtendedValue_V2 &emValue, int phase);
 
   // power 1 == 0.00001 VA
-  static _supla_int_t getPowerApparent(
+  static int64_t getPowerApparent(
       const TElectricityMeter_ExtendedValue_V2 &emValue, int phase);
 
   // power 1 == 0.001
@@ -189,6 +234,12 @@ class ElectricityMeter :
       const TElectricityMeter_ExtendedValue_V2 &emValue);
 
   static bool isRvrReactEnergyUsed(
+      const TElectricityMeter_ExtendedValue_V2 &emValue);
+
+  static bool isFwdBalancedActEnergyUsed(
+    const TElectricityMeter_ExtendedValue_V2 &emValue);
+
+  static bool isRvrBalancedActEnergyUsed(
       const TElectricityMeter_ExtendedValue_V2 &emValue);
 
   static bool isVoltageUsed(
@@ -222,6 +273,11 @@ class ElectricityMeter :
   // set values on channel. Don't use any other method to modify channel values.
   virtual void readValuesFromDevice();
 
+  void onRegistered(Supla::Protocol::SuplaSrpc *suplaSrpc) override;
+  void onLoadConfig(SuplaDeviceClass *sdc) override;
+  uint8_t applyChannelConfig(TSD_ChannelConfig *config, bool local) override;
+  void fillChannelConfig(void *channelConfig, int *size) override;
+
   // Put here initialization code for electricity meter device.
   // It will be called within SuplaDevce.begin method.
   // It should also read first data set, so at the end it should call those two
@@ -247,21 +303,46 @@ class ElectricityMeter :
 
   Channel *getChannel() override;
 
-  virtual void addAction(int action,
-                         ActionHandler &client,  // NOLINT(runtime/references)
-                         Supla::Condition *condition);
-  virtual void addAction(int action,
-                         ActionHandler *client,
-                         Supla::Condition *condition);
+  void enableChannelConfig();
+  void addCtType(uint64_t ctType);
+  void addPhaseLedType(uint64_t ledType);
+  bool isCtTypeSupported(uint64_t ctType) const;
+
+  int8_t getPhaseLedType() const;
+  int32_t getLedVoltageLow() const;
+  int32_t getLedVoltageHigh() const;
+  int32_t getLedPowerLow() const;
+  int32_t getLedPowerHigh() const;
+  bool isPhaseLedTypeSupported(uint64_t ledType) const;
 
  protected:
-  TElectricityMeter_ExtendedValue_V2 emValue;
+  TElectricityMeter_ExtendedValue_V2 emValue = {};
   ChannelExtended extChannel;
-  unsigned _supla_int_t rawCurrent[MAX_PHASES];
-  bool valueChanged;
-  bool currentMeasurementAvailable;
-  uint64_t lastReadTime;
-  unsigned int refreshRateSec;
+  uint32_t lastChannelUpdateTime = 0;
+  uint32_t rawCurrent[MAX_PHASES] = {};
+  int64_t rawActivePower[MAX_PHASES] = {};
+  int64_t rawReactivePower[MAX_PHASES] = {};
+  int64_t rawApparentPower[MAX_PHASES] = {};
+
+  uint32_t lastReadTime = 0;
+  uint8_t refreshRateSec = 5;
+  bool valueChanged = false;
+  bool currentMeasurementAvailable = false;
+  bool powerActiveMeasurementAvailable = false;
+  bool powerReactiveMeasurementAvailable = false;
+  bool powerApparentMeasurementAvailable = false;
+
+  uint64_t availableCtTypes = 0;  // from proto EM_CT_TYPE_
+  uint64_t availablePhaseLedTypes = 0;  // from proto EM_PHASE_LED_TYPE_
+  bool channelConfigUsed = false;
+  int8_t usedCtType = -1;         // correspond with bit position of CT type
+                                 // Value -1 - default/not used
+  int8_t usedPhaseLedType = -1;   // correspond with bit position of LED type
+                                 // Value -1 - default/not used
+  int32_t ledVoltageLow = 21000;   // 210.00 V
+  int32_t ledVoltageHigh = 25000;  // 250.00 V
+  int32_t ledPowerLow = -5000;     // -50.00 W
+  int32_t ledPowerHigh = 5000;     //  50.00 W
 };
 
 };  // namespace Sensor

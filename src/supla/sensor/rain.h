@@ -39,14 +39,14 @@ class Rain : public ChannelElement {
   }
 
   void iterateAlways() {
-    if (lastReadTime + 10000 < millis()) {
+    if (millis() - lastReadTime > 10000) {
       lastReadTime = millis();
       channel.setNewValue(getValue());
     }
   }
 
  protected:
-  uint64_t lastReadTime;
+  uint32_t lastReadTime;
 };
 
 };  // namespace Sensor

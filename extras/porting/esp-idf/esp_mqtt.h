@@ -36,11 +36,12 @@ class EspMqtt : public Mqtt {
   void onInit() override;
   //  bool onLoadConfig() override;
   void disconnect() override;
-  bool iterate(uint64_t _millis) override;
+  bool iterate(uint32_t _millis) override;
   // bool isNetworkRestartRequested() override;
   // uint32_t getConnectionFailTime() override;
 
   static Supla::Mutex *mutex;
+  static Supla::Mutex *mutexEventHandler;
   void setConnecting();
   void setConnectionError();
   void setRegisteredAndReady();
@@ -51,6 +52,7 @@ class EspMqtt : public Mqtt {
                           int qos,
                           bool retain) override;
   void subscribeImp(const char *topic, int qos) override;
+  void publishChannelSetup(int channelNumber);
   bool started = false;
   bool enterRegisteredAndReady = false;
   esp_mqtt_client_handle_t client = {};

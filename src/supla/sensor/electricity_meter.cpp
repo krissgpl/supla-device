@@ -20,23 +20,21 @@
 #include <supla/time.h>
 #include <supla/log_wrapper.h>
 #include <supla/actions.h>
+#include <supla/tools.h>
+#include <supla/storage/config.h>
+#include <supla/network/html/em_phase_led.h>
+#include <supla/network/html/em_ct_type.h>
 
 #include "../condition.h"
 #include "../events.h"
 #include "electricity_meter.h"
 
-Supla::Sensor::ElectricityMeter::ElectricityMeter()
-    : valueChanged(false), lastReadTime(0), refreshRateSec(5) {
+Supla::Sensor::ElectricityMeter::ElectricityMeter() {
   extChannel.setType(SUPLA_CHANNELTYPE_ELECTRICITY_METER);
   extChannel.setDefault(SUPLA_CHANNELFNC_ELECTRICITY_METER);
   extChannel.setFlag(SUPLA_CHANNEL_FLAG_CALCFG_RESET_COUNTERS);
 
-  memset(&emValue, 0, sizeof(emValue));
   emValue.period = 5;
-  for (int i = 0; i < MAX_PHASES; i++) {
-    rawCurrent[i] = 0;
-  }
-  currentMeasurementAvailable = false;
 }
 
 void Supla::Sensor::ElectricityMeter::updateChannelValues() {
@@ -46,24 +44,50 @@ void Supla::Sensor::ElectricityMeter::updateChannelValues() {
   valueChanged = false;
 
   emValue.m_count = 1;
-
   // Update current messurement precision based on last updates
+  bool over65A = false;
+  bool activePowerInKW = false;
+  bool reactivePowerInKvar = false;
+  bool apparentPowerInKVA = false;
+  for (int i = 0; i < MAX_PHASES; i++) {
+    if (rawCurrent[i] > UINT16_MAX - 1) {
+      over65A = true;
+    }
+    if (rawActivePower[i] > INT32_MAX) {
+      activePowerInKW = true;
+    }
+    if (rawReactivePower[i] > INT32_MAX) {
+      reactivePowerInKvar = true;
+    }
+    if (rawApparentPower[i] > INT32_MAX) {
+      apparentPowerInKVA = true;
+    }
+  }
+
+  for (int i = 0; i < MAX_PHASES; i++) {
+    if (over65A) {
+      emValue.m[0].current[i] = rawCurrent[i] / 10;
+    } else {
+      emValue.m[0].current[i] = rawCurrent[i];
+    }
+    if (activePowerInKW) {
+      emValue.m[0].power_active[i] = rawActivePower[i] / 1000;
+    } else {
+      emValue.m[0].power_active[i] = rawActivePower[i];
+    }
+    if (reactivePowerInKvar) {
+      emValue.m[0].power_reactive[i] = rawReactivePower[i] / 1000;
+    } else {
+      emValue.m[0].power_reactive[i] = rawReactivePower[i];
+    }
+    if (apparentPowerInKVA) {
+      emValue.m[0].power_apparent[i] = rawApparentPower[i] / 1000;
+    } else {
+      emValue.m[0].power_apparent[i] = rawApparentPower[i];
+    }
+  }
+
   if (currentMeasurementAvailable) {
-    bool over65A = false;
-    for (int i = 0; i < MAX_PHASES; i++) {
-      if (rawCurrent[i] > 65000) {
-        over65A = true;
-      }
-    }
-
-    for (int i = 0; i < MAX_PHASES; i++) {
-      if (over65A) {
-        emValue.m[0].current[i] = rawCurrent[i] / 10;
-      } else {
-        emValue.m[0].current[i] = rawCurrent[i];
-      }
-    }
-
     if (over65A) {
       emValue.measured_values &= (~EM_VAR_CURRENT);
       emValue.measured_values |= EM_VAR_CURRENT_OVER_65A;
@@ -72,10 +96,40 @@ void Supla::Sensor::ElectricityMeter::updateChannelValues() {
       emValue.measured_values |= EM_VAR_CURRENT;
     }
   }
+  if (powerActiveMeasurementAvailable) {
+    if (activePowerInKW) {
+      emValue.measured_values &= (~EM_VAR_POWER_ACTIVE);
+      emValue.measured_values |= EM_VAR_POWER_ACTIVE_KW;
+    } else {
+      emValue.measured_values &= (~EM_VAR_POWER_ACTIVE_KW);
+      emValue.measured_values |= EM_VAR_POWER_ACTIVE;
+    }
+  }
+  if (powerReactiveMeasurementAvailable) {
+    if (reactivePowerInKvar) {
+      emValue.measured_values &= (~EM_VAR_POWER_REACTIVE);
+      emValue.measured_values |= EM_VAR_POWER_REACTIVE_KVAR;
+    } else {
+      emValue.measured_values &= (~EM_VAR_POWER_REACTIVE_KVAR);
+      emValue.measured_values |= EM_VAR_POWER_REACTIVE;
+    }
+  }
+  if (powerApparentMeasurementAvailable) {
+    if (apparentPowerInKVA) {
+      emValue.measured_values &= (~EM_VAR_POWER_APPARENT);
+      emValue.measured_values |= EM_VAR_POWER_APPARENT_KVA;
+    } else {
+      emValue.measured_values &= (~EM_VAR_POWER_APPARENT_KVA);
+      emValue.measured_values |= EM_VAR_POWER_APPARENT;
+    }
+  }
 
   // Prepare extended channel value
-  srpc_evtool_v2_emextended2extended(&emValue, extChannel.getExtValue());
-  extChannel.setNewValue(emValue);
+  if (lastChannelUpdateTime == 0 || millis() - lastChannelUpdateTime >= 5000) {
+    lastChannelUpdateTime = millis();
+    srpc_evtool_v2_emextended2extended(&emValue, extChannel.getExtValue());
+    extChannel.setNewValue(emValue);
+  }
   runAction(Supla::ON_CHANGE);
 }
 
@@ -127,6 +181,24 @@ void Supla::Sensor::ElectricityMeter::setRvrReactEnergy(
   }
 }
 
+// energy in 0.00001 kWh
+void Supla::Sensor::ElectricityMeter::setFwdBalancedEnergy(uint64_t energy) {
+  if (emValue.total_forward_active_energy_balanced != energy) {
+    valueChanged = true;
+  }
+  emValue.total_forward_active_energy_balanced = energy;
+  emValue.measured_values |= EM_VAR_FORWARD_ACTIVE_ENERGY_BALANCED;
+}
+
+// energy in 0.00001 kWh
+void Supla::Sensor::ElectricityMeter::setRvrBalancedEnergy(uint64_t energy) {
+  if (emValue.total_reverse_active_energy_balanced != energy) {
+    valueChanged = true;
+  }
+  emValue.total_reverse_active_energy_balanced = energy;
+  emValue.measured_values |= EM_VAR_REVERSE_ACTIVE_ENERGY_BALANCED;
+}
+
 // voltage in 0.01 V
 void Supla::Sensor::ElectricityMeter::setVoltage(
     int phase, unsigned _supla_int16_t voltage) {
@@ -161,38 +233,37 @@ void Supla::Sensor::ElectricityMeter::setFreq(unsigned _supla_int16_t freq) {
 }
 
 // power in 0.00001 W
-void Supla::Sensor::ElectricityMeter::setPowerActive(int phase,
-                                                     _supla_int_t power) {
+void Supla::Sensor::ElectricityMeter::setPowerActive(int phase, int64_t power) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    if (emValue.m[0].power_active[phase] != power) {
+    if (rawActivePower[phase] != power) {
       valueChanged = true;
+      rawActivePower[phase] = power;
     }
-    emValue.m[0].power_active[phase] = power;
-    emValue.measured_values |= EM_VAR_POWER_ACTIVE;
+    powerActiveMeasurementAvailable = true;
   }
 }
 
 // power in 0.00001 var
 void Supla::Sensor::ElectricityMeter::setPowerReactive(int phase,
-                                                       _supla_int_t power) {
+                                                       int64_t power) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    if (emValue.m[0].power_reactive[phase] != power) {
+    if (rawReactivePower[phase] != power) {
       valueChanged = true;
+      rawReactivePower[phase] = power;
     }
-    emValue.m[0].power_reactive[phase] = power;
-    emValue.measured_values |= EM_VAR_POWER_REACTIVE;
+    powerReactiveMeasurementAvailable = true;
   }
 }
 
 // power in 0.00001 VA
 void Supla::Sensor::ElectricityMeter::setPowerApparent(int phase,
-                                                       _supla_int_t power) {
+                                                       int64_t power) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    if (emValue.m[0].power_apparent[phase] != power) {
+    if (rawApparentPower[phase] != power) {
       valueChanged = true;
+      rawApparentPower[phase] = power;
     }
-    emValue.m[0].power_apparent[phase] = power;
-    emValue.measured_values |= EM_VAR_POWER_APPARENT;
+    powerApparentMeasurementAvailable = true;
   }
 }
 
@@ -222,8 +293,19 @@ void Supla::Sensor::ElectricityMeter::setPhaseAngle(int phase,
 
 void Supla::Sensor::ElectricityMeter::resetReadParameters() {
   if (emValue.measured_values != 0) {
-    emValue.measured_values = 0;
+    // we keep only energy counting registers/flags
+    emValue.measured_values &= EM_VAR_ALL_ENERGY_REGISTERS;
+
     memset(&emValue.m[0], 0, sizeof(TElectricityMeter_Measurement));
+    memset(&rawCurrent, 0, sizeof(rawCurrent));
+    memset(&rawActivePower, 0, sizeof(rawActivePower));
+    memset(&rawReactivePower, 0, sizeof(rawReactivePower));
+    memset(&rawApparentPower, 0, sizeof(rawApparentPower));
+    currentMeasurementAvailable = false;
+    powerActiveMeasurementAvailable = false;
+    powerReactiveMeasurementAvailable = false;
+    powerApparentMeasurementAvailable = false;
+
     valueChanged = true;
   }
 }
@@ -232,6 +314,269 @@ void Supla::Sensor::ElectricityMeter::resetReadParameters() {
 // It will be called every 5 s. Use set methods defined above in order to
 // set values on channel. Don't use any other method to modify channel values.
 void Supla::Sensor::ElectricityMeter::readValuesFromDevice() {
+}
+
+void Supla::Sensor::ElectricityMeter::onLoadConfig(SuplaDeviceClass *) {
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (cfg && (availablePhaseLedTypes || availableCtTypes)) {
+    // load config changed offline flags
+    loadConfigChangeFlag();
+
+    int32_t value32 = 0;
+    char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+    generateKey(key, Supla::Html::EmCtTypeTag);
+    if (cfg->getInt32(key, &value32)) {
+      if (value32 > 63) {
+        value32 = 63;
+      }
+      usedCtType = value32;
+    }
+    SUPLA_LOG_INFO("EM: CT type is %d", usedCtType);
+
+    int8_t value = 0;
+    generateKey(key, Supla::Html::EmPhaseLedTag);
+    if (cfg->getInt8(key, &value)) {
+      if (value > 63) {
+        value = 63;
+      }
+      usedPhaseLedType = value;
+    }
+    SUPLA_LOG_INFO("EM: Phase LED type is %d", usedPhaseLedType);
+
+    value32 = 0;
+    generateKey(key, Supla::Html::EmPhaseLedVoltageLowTag);
+    if (cfg->getInt32(key, &value32)) {
+      ledVoltageLow = value32;
+    }
+
+    generateKey(key, Supla::Html::EmPhaseLedVoltageHighTag);
+    if (cfg->getInt32(key, &value32)) {
+      ledVoltageHigh = value32;
+    }
+
+    generateKey(key, Supla::Html::EmPhaseLedPowerLowTag);
+    if (cfg->getInt32(key, &value32)) {
+      ledPowerLow = value32;
+    }
+
+    generateKey(key, Supla::Html::EmPhaseLedPowerHighTag);
+    if (cfg->getInt32(key, &value32)) {
+      ledPowerHigh = value32;
+    }
+
+    bool configChange = false;
+
+    const int32_t MinPowerValue = -2000000000;
+    const int32_t MaxPowerValue = 2000000000;
+    const int32_t MinVoltageValue = 15000;
+    const int32_t MaxVoltageValue = 100000;
+    const int32_t MinValuesDistance = 1000;
+
+    generateKey(key, Supla::Html::EmPhaseLedPowerLowTag);
+    cfg->getInt32(key, &ledPowerLow);
+    if (ledPowerLow < MinPowerValue) {
+      ledPowerLow = MinPowerValue;
+      cfg->setInt32(key, ledPowerLow);
+      configChange = true;
+    }
+    if (ledPowerLow > MaxPowerValue - MinValuesDistance) {
+      ledPowerLow = MaxPowerValue - MinValuesDistance;
+      cfg->setInt32(key, ledPowerLow);
+      configChange = true;
+    }
+
+    generateKey(key, Supla::Html::EmPhaseLedPowerHighTag);
+    cfg->getInt32(key, &ledPowerHigh);
+    if (ledPowerHigh > MaxPowerValue) {
+      ledPowerHigh = MaxPowerValue;
+      cfg->setInt32(key, ledPowerHigh);
+      configChange = true;
+    }
+    if (ledPowerHigh < ledPowerLow) {
+      ledPowerHigh = ledPowerLow + MinValuesDistance;
+      cfg->setInt32(key, ledPowerHigh);
+      configChange = true;
+    }
+
+    generateKey(key, Supla::Html::EmPhaseLedVoltageLowTag);
+    cfg->getInt32(key, &ledVoltageLow);
+    if (ledVoltageLow < MinVoltageValue) {
+      ledVoltageLow = MinVoltageValue;
+      cfg->setInt32(key, ledVoltageLow);
+      configChange = true;
+    }
+    if (ledVoltageLow > MaxVoltageValue - MinValuesDistance) {
+      ledVoltageLow = MaxVoltageValue - MinValuesDistance;
+      cfg->setInt32(key, ledVoltageLow);
+      configChange = true;
+    }
+
+    generateKey(key, Supla::Html::EmPhaseLedVoltageHighTag);
+    cfg->getInt32(key, &ledVoltageHigh);
+    if (ledVoltageHigh > MaxVoltageValue) {
+      ledVoltageHigh = MaxVoltageValue;
+      cfg->setInt32(key, ledVoltageHigh);
+      configChange = true;
+    }
+    if (ledVoltageHigh < ledVoltageLow) {
+      ledVoltageHigh = ledVoltageLow + MinValuesDistance;
+      cfg->setInt32(key, ledVoltageHigh);
+      configChange = true;
+    }
+
+    if (configChange) {
+      channelConfigState = Supla::ChannelConfigState::LocalChangePending;
+      saveConfigChangeFlag();
+    }
+
+    SUPLA_LOG_INFO(
+        "EM: Voltage low: %d, Voltage high: %d, Power low: %d, Power high: %d",
+        ledVoltageLow,
+        ledVoltageHigh,
+        ledPowerLow,
+        ledPowerHigh);
+  }
+}
+
+uint8_t Supla::Sensor::ElectricityMeter::applyChannelConfig(
+    TSD_ChannelConfig *config, bool) {
+  if (config == nullptr) {
+    return SUPLA_CONFIG_RESULT_DATA_ERROR;
+  }
+  if (config->ConfigType != SUPLA_CONFIG_TYPE_DEFAULT) {
+    return SUPLA_CONFIG_RESULT_DATA_ERROR;
+  }
+  auto cfg = Supla::Storage::ConfigInstance();
+  if (!cfg) {
+    return SUPLA_CONFIG_RESULT_TRUE;
+  }
+
+  if (config->Func == SUPLA_CHANNELFNC_ELECTRICITY_METER) {
+    if (config->ConfigSize < sizeof(TChannelConfig_ElectricityMeter)) {
+      return SUPLA_CONFIG_RESULT_DATA_ERROR;
+    }
+    auto configFromServer =
+        reinterpret_cast<TChannelConfig_ElectricityMeter *>(config->Config);
+
+    bool configChanged = false;
+    bool configValid = true;
+
+    if (usedCtType != static_cast<int8_t>(configFromServer->UsedCTType)) {
+      if (isCtTypeSupported(configFromServer->UsedCTType)) {
+        configValid = false;
+      } else {
+        usedCtType = configFromServer->UsedCTType;
+        char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+        generateKey(key, Supla::Html::EmCtTypeTag);
+        cfg->setInt8(key, usedCtType);
+        configChanged = true;
+      }
+    }
+
+    if (usedPhaseLedType !=
+        static_cast<int8_t>(configFromServer->UsedPhaseLedType)) {
+      if (isPhaseLedTypeSupported(configFromServer->UsedPhaseLedType)) {
+        configValid = false;
+      } else {
+        usedPhaseLedType = configFromServer->UsedPhaseLedType;
+        char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+        generateKey(key, Supla::Html::EmPhaseLedTag);
+        cfg->setInt8(key, usedPhaseLedType);
+        configChanged = true;
+      }
+    }
+
+    if (usedPhaseLedType == 3) {
+      if (ledVoltageLow != configFromServer->PhaseLedParam1) {
+        ledVoltageLow = configFromServer->PhaseLedParam1;
+        char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+        generateKey(key, Supla::Html::EmPhaseLedVoltageLowTag);
+        cfg->setInt32(key, ledVoltageLow);
+        configChanged = true;
+      }
+      if (ledVoltageHigh != configFromServer->PhaseLedParam2) {
+        ledVoltageHigh = configFromServer->PhaseLedParam2;
+        char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+        generateKey(key, Supla::Html::EmPhaseLedVoltageHighTag);
+        cfg->setInt32(key, ledVoltageHigh);
+        configChanged = true;
+      }
+    }
+
+    if (usedPhaseLedType == 4) {
+      if (ledPowerLow != configFromServer->PhaseLedParam1) {
+        ledPowerLow = configFromServer->PhaseLedParam1;
+        char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+        generateKey(key, Supla::Html::EmPhaseLedPowerLowTag);
+        cfg->setInt32(key, ledPowerLow);
+        configChanged = true;
+      }
+      if (ledPowerHigh != configFromServer->PhaseLedParam2) {
+        ledPowerHigh = configFromServer->PhaseLedParam2;
+        char key[SUPLA_CONFIG_MAX_KEY_SIZE] = {};
+        generateKey(key, Supla::Html::EmPhaseLedPowerHighTag);
+        cfg->setInt32(key, ledPowerHigh);
+        configChanged = true;
+      }
+    }
+
+    if (configChanged) {
+      cfg->commit();
+    }
+
+    if (configFromServer->AvailablePhaseLedTypes != availablePhaseLedTypes ||
+        configFromServer->AvailableCTTypes != availableCtTypes ||
+        !configValid) {
+      channelConfigState = Supla::ChannelConfigState::LocalChangePending;
+      saveConfigChangeFlag();
+    }
+    return SUPLA_CONFIG_RESULT_TRUE;
+  }
+  return SUPLA_CONFIG_RESULT_TRUE;
+}
+
+void Supla::Sensor::ElectricityMeter::fillChannelConfig(void *channelConfig,
+                                                        int *size) {
+  if (size) {
+    *size = 0;
+  } else {
+    return;
+  }
+  if (channelConfig == nullptr) {
+    return;
+  }
+
+  auto config = reinterpret_cast<TChannelConfig_ElectricityMeter *>(
+      channelConfig);
+  *size = sizeof(TChannelConfig_ElectricityMeter);
+
+  config->AvailableCTTypes = availableCtTypes;
+  if (usedCtType >= 0 && usedCtType <= 63) {
+    config->UsedCTType = (1ULL << usedCtType);
+  }
+
+  config->AvailablePhaseLedTypes = availablePhaseLedTypes;
+  if (usedPhaseLedType >= 0 && usedPhaseLedType <= 63) {
+    config->UsedPhaseLedType = (1ULL << usedPhaseLedType);
+  }
+
+  if (usedPhaseLedType == 3) {
+    config->PhaseLedParam1 = ledVoltageLow;
+    config->PhaseLedParam2 = ledVoltageHigh;
+  } else if (usedPhaseLedType == 4) {
+    config->PhaseLedParam1 = ledPowerLow;
+    config->PhaseLedParam2 = ledPowerHigh;
+  }
+  SUPLA_LOG_DEBUG(
+      "EM: fillChannelConfig: usedCtType=%d, usedPhaseLedType=%d"
+      ", availableCtTypes=%d, availablePhaseLedTypes=%d"
+      ", param1=%d, param2=%d",
+      static_cast<uint32_t>(config->UsedCTType),
+      static_cast<uint32_t>(config->UsedPhaseLedType),
+      static_cast<uint32_t>(config->AvailableCTTypes),
+      static_cast<uint32_t>(config->AvailablePhaseLedTypes),
+      config->PhaseLedParam1,
+      config->PhaseLedParam2);
 }
 
 // Put here initialization code for electricity meter device.
@@ -268,22 +613,6 @@ void Supla::Sensor::ElectricityMeter::setRefreshRate(unsigned int sec) {
   }
 }
 
-// TODO(klew): move those addAction methods to separate parent
-// class i.e. ExtChannelElement - similar to ChannelElement
-void Supla::Sensor::ElectricityMeter::addAction(int action,
-                                                ActionHandler &client,
-                                                Supla::Condition *condition) {
-  condition->setClient(client);
-  condition->setSource(this);
-  LocalAction::addAction(action, condition, Supla::ON_CHANGE);
-}
-
-void Supla::Sensor::ElectricityMeter::addAction(int action,
-                                                ActionHandler *client,
-                                                Supla::Condition *condition) {
-  addAction(action, *client, condition);
-}
-
 // energy 1 == 0.00001 kWh
 unsigned _supla_int64_t
 Supla::Sensor::ElectricityMeter::getFwdActEnergy(int phase) {
@@ -300,6 +629,16 @@ Supla::Sensor::ElectricityMeter::getRvrActEnergy(int phase) {
     return emValue.total_reverse_active_energy[phase];
   }
   return 0;
+}
+
+// energy 1 == 0.00001 kWh
+uint64_t Supla::Sensor::ElectricityMeter::getFwdBalancedActEnergy() {
+  return emValue.total_forward_active_energy_balanced;
+}
+
+// energy 1 == 0.00001 kWh
+uint64_t Supla::Sensor::ElectricityMeter::getRvrBalancedActEnergy() {
+  return emValue.total_reverse_active_energy_balanced;
 }
 
 // energy 1 == 0.00001 kWh
@@ -342,25 +681,25 @@ unsigned _supla_int16_t Supla::Sensor::ElectricityMeter::getFreq() {
 }
 
 // power 1 == 0.00001 W
-_supla_int_t Supla::Sensor::ElectricityMeter::getPowerActive(int phase) {
+int64_t Supla::Sensor::ElectricityMeter::getPowerActive(int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    return emValue.m[0].power_active[phase];
+    return rawActivePower[phase];
   }
   return 0;
 }
 
 // power 1 == 0.00001 var
-_supla_int_t Supla::Sensor::ElectricityMeter::getPowerReactive(int phase) {
+int64_t Supla::Sensor::ElectricityMeter::getPowerReactive(int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    return emValue.m[0].power_reactive[phase];
+    return rawReactivePower[phase];
   }
   return 0;
 }
 
 // power 1 == 0.00001 VA
-_supla_int_t Supla::Sensor::ElectricityMeter::getPowerApparent(int phase) {
+int64_t Supla::Sensor::ElectricityMeter::getPowerApparent(int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    return emValue.m[0].power_apparent[phase];
+    return rawApparentPower[phase];
   }
   return 0;
 }
@@ -426,6 +765,12 @@ unsigned _supla_int64_t Supla::Sensor::ElectricityMeter::getTotalFwdActEnergy(
 }
 
 // energy 1 == 0.00001 kWh
+uint64_t Supla::Sensor::ElectricityMeter::getFwdBalancedActEnergy(
+    const TElectricityMeter_ExtendedValue_V2 &emValue) {
+  return emValue.total_forward_active_energy_balanced;
+}
+
+// energy 1 == 0.00001 kWh
 unsigned _supla_int64_t Supla::Sensor::ElectricityMeter::getRvrActEnergy(
     const TElectricityMeter_ExtendedValue_V2 &emValue, int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
@@ -443,6 +788,12 @@ unsigned _supla_int64_t Supla::Sensor::ElectricityMeter::getTotalRvrActEnergy(
   }
 
   return sum;
+}
+
+// energy 1 == 0.00001 kWh
+uint64_t Supla::Sensor::ElectricityMeter::getRvrBalancedActEnergy(
+    const TElectricityMeter_ExtendedValue_V2 &emValue) {
+  return emValue.total_reverse_active_energy_balanced;
 }
 
 // energy 1 == 0.00001 kWh
@@ -492,28 +843,40 @@ unsigned _supla_int16_t Supla::Sensor::ElectricityMeter::getFreq(
 }
 
 // power 1 == 0.00001 W
-_supla_int_t Supla::Sensor::ElectricityMeter::getPowerActive(
+int64_t Supla::Sensor::ElectricityMeter::getPowerActive(
     const TElectricityMeter_ExtendedValue_V2 &emValue, int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    return emValue.m[0].power_active[phase];
+    if (emValue.measured_values & EM_VAR_POWER_ACTIVE_KW) {
+      return emValue.m[0].power_active[phase] * 1000;
+    } else {
+      return emValue.m[0].power_active[phase];
+    }
   }
   return 0;
 }
 
 // power 1 == 0.00001 var
-_supla_int_t Supla::Sensor::ElectricityMeter::getPowerReactive(
+int64_t Supla::Sensor::ElectricityMeter::getPowerReactive(
     const TElectricityMeter_ExtendedValue_V2 &emValue, int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    return emValue.m[0].power_reactive[phase];
+    if (emValue.measured_values & EM_VAR_POWER_REACTIVE_KVAR) {
+      return emValue.m[0].power_reactive[phase] * 1000;
+    }  else {
+      return emValue.m[0].power_reactive[phase];
+    }
   }
   return 0;
 }
 
 // power 1 == 0.00001 VA
-_supla_int_t Supla::Sensor::ElectricityMeter::getPowerApparent(
+int64_t Supla::Sensor::ElectricityMeter::getPowerApparent(
     const TElectricityMeter_ExtendedValue_V2 &emValue, int phase) {
   if (phase >= 0 && phase < MAX_PHASES) {
-    return emValue.m[0].power_apparent[phase];
+    if (emValue.measured_values & EM_VAR_POWER_APPARENT_KVA) {
+      return emValue.m[0].power_apparent[phase] * 1000;
+    } else {
+      return emValue.m[0].power_apparent[phase];
+    }
   }
   return 0;
 }
@@ -557,6 +920,15 @@ bool Supla::Sensor::ElectricityMeter::isRvrReactEnergyUsed(
   return emValue.measured_values & EM_VAR_REVERSE_REACTIVE_ENERGY;
 }
 
+bool Supla::Sensor::ElectricityMeter::isFwdBalancedActEnergyUsed(
+    const TElectricityMeter_ExtendedValue_V2 &emValue) {
+  return emValue.measured_values & EM_VAR_FORWARD_ACTIVE_ENERGY_BALANCED;
+}
+bool Supla::Sensor::ElectricityMeter::isRvrBalancedActEnergyUsed(
+    const TElectricityMeter_ExtendedValue_V2 &emValue) {
+  return emValue.measured_values & EM_VAR_REVERSE_ACTIVE_ENERGY_BALANCED;
+}
+
 bool Supla::Sensor::ElectricityMeter::isVoltageUsed(
     const TElectricityMeter_ExtendedValue_V2 &emValue) {
   return emValue.measured_values & EM_VAR_VOLTAGE;
@@ -598,3 +970,65 @@ bool Supla::Sensor::ElectricityMeter::isPhaseAngleUsed(
   return emValue.measured_values & EM_VAR_PHASE_ANGLE;
 }
 
+
+void Supla::Sensor::ElectricityMeter::addPhaseLedType(uint64_t phaseLedType) {
+  if (availablePhaseLedTypes == 0 && phaseLedType != 0 &&
+      usedPhaseLedType == -1) {
+    int bitNumber = Supla::getBitNumber(phaseLedType);
+    if (bitNumber >= 0) {
+      usedPhaseLedType = bitNumber;
+    }
+  }
+  availablePhaseLedTypes |= phaseLedType;
+  enableChannelConfig();
+}
+
+void Supla::Sensor::ElectricityMeter::enableChannelConfig() {
+  extChannel.setFlag(SUPLA_CHANNEL_FLAG_RUNTIME_CHANNEL_CONFIG_UPDATE);
+}
+
+void Supla::Sensor::ElectricityMeter::addCtType(uint64_t ctType) {
+  if (availableCtTypes == 0 && ctType != 0 && usedCtType == -1) {
+    int bitNumber = Supla::getBitNumber(ctType);
+    if (bitNumber >= 0) {
+      usedCtType = bitNumber;
+    }
+  }
+  availableCtTypes |= ctType;
+  enableChannelConfig();
+}
+
+int8_t Supla::Sensor::ElectricityMeter::getPhaseLedType() const {
+  return usedPhaseLedType;
+}
+
+int32_t Supla::Sensor::ElectricityMeter::getLedVoltageLow() const {
+  return ledVoltageLow;
+}
+
+int32_t Supla::Sensor::ElectricityMeter::getLedVoltageHigh() const {
+  return ledVoltageHigh;
+}
+
+int32_t Supla::Sensor::ElectricityMeter::getLedPowerLow() const {
+  return ledPowerLow;
+}
+
+int32_t Supla::Sensor::ElectricityMeter::getLedPowerHigh() const {
+  return ledPowerHigh;
+}
+
+bool Supla::Sensor::ElectricityMeter::isCtTypeSupported(uint64_t ctType) const {
+  return (availableCtTypes & ctType) != 0;
+}
+
+bool Supla::Sensor::ElectricityMeter::isPhaseLedTypeSupported(
+    uint64_t ledType) const {
+  return (availablePhaseLedTypes & ledType) != 0;
+}
+
+void Supla::Sensor::ElectricityMeter::onRegistered(
+    Supla::Protocol::SuplaSrpc *suplaSrpc) {
+  lastChannelUpdateTime = 0;
+  Supla::ElementWithChannelActions::onRegistered(suplaSrpc);
+}

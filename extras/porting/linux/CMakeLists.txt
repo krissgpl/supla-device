@@ -3,8 +3,19 @@ include(FetchContent)
 find_package(yaml-cpp REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.10.5/json.tar.xz)
-FetchContent_Declare(cxxopts URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.0.0.tar.gz)
+if(${CMAKE_VERSION} VERSION_LESS "3.24.0") 
+  FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.10.5/json.tar.xz)
+  FetchContent_Declare(cxxopts URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.0.0.tar.gz)
+else()
+  FetchContent_Declare(json
+    URL https://github.com/nlohmann/json/releases/download/v3.10.5/json.tar.xz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+  FetchContent_Declare(cxxopts
+    URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.0.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+endif()
 #FetchContent_MakeAvailable(json cxxopts)
 
 # NOTE: Where possible, prefer to use FetchContent_MakeAvailable()
@@ -31,6 +42,7 @@ set(SUPLA_DEVICE_LINUX_SRCS
   linux_file_storage.cpp
 
   linux_timers.cpp
+  linux_clock.cpp
 
   supla/source/cmd.cpp
   supla/source/file.cpp
@@ -48,10 +60,15 @@ set(SUPLA_DEVICE_LINUX_SRCS
   supla/sensor/pressure_parsed.cpp
   supla/sensor/rain_parsed.cpp
   supla/sensor/wind_parsed.cpp
+  supla/sensor/weight_parsed.cpp
+  supla/sensor/distance_parsed.cpp
   supla/sensor/therm_hygro_meter_parsed.cpp
+  supla/sensor/general_purpose_measurement_parsed.cpp
+  supla/sensor/general_purpose_meter_parsed.cpp
 
   supla/control/cmd_relay.cpp
   supla/control/action_trigger_parsed.cpp
+  supla/control/hvac_parsed.cpp
 
   ../../../src/supla/pv/fronius.cpp
   ../../../src/supla/pv/afore.cpp
@@ -81,5 +98,5 @@ target_link_libraries (supladevice PUBLIC
   nlohmann_json::nlohmann_json
   cxxopts::cxxopts
   OpenSSL::SSL
-  ${YAML_CPP_LIBRARIES}
+  yaml-cpp
   )

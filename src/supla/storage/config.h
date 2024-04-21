@@ -26,17 +26,17 @@
 
 #define SUPLA_CONFIG_MAX_KEY_SIZE 16
 
-#define MAX_SSID_SIZE          33  // actuall SSID should be at most 32 bytes
+#define MAX_SSID_SIZE          33  // actual SSID should be at most 32 bytes
                                    // but we add here extra byte for null
                                    // termination
 #define MAX_WIFI_PASSWORD_SIZE 64
 #define MQTT_CLIENTID_MAX_SIZE 23
-#define MQTT_USERNAME_MAX_SIZE 65
-#define MQTT_PASSWORD_MAX_SIZE 65
+#define MQTT_USERNAME_MAX_SIZE 256
+#define MQTT_PASSWORD_MAX_SIZE 256
 
 namespace Supla {
 
-enum DeviceMode {
+enum DeviceMode : uint8_t {
   DEVICE_MODE_NOT_SET = 0,
   DEVICE_MODE_TEST = 1,
   DEVICE_MODE_NORMAL = 2,
@@ -50,8 +50,11 @@ class Config {
   virtual ~Config();
   virtual bool init() = 0;
   virtual void removeAll() = 0;
-  virtual bool isMinimalConfigReady();
+  virtual bool isMinimalConfigReady(bool showLogs = true);
   virtual bool isConfigModeSupported();
+
+  // Override this method and setup all default value if needed
+  virtual void initDefaultDeviceConfig();
 
   // Generic getters and setters
   virtual bool setString(const char* key, const char* value) = 0;
@@ -60,7 +63,6 @@ class Config {
 
   virtual bool setBlob(const char* key, const char* value, size_t blobSize) = 0;
   virtual bool getBlob(const char* key, char* value, size_t blobSize) = 0;
-  virtual int getBlobSize(const char* key) = 0;
 
   virtual bool getInt8(const char* key, int8_t* result) = 0;
   virtual bool getUInt8(const char* key, uint8_t* result) = 0;
@@ -138,9 +140,21 @@ class Config {
   virtual bool getAltWiFiSSID(char* result);
   virtual bool getAltWiFiPassword(char* result);
 
+  virtual bool isDeviceConfigChangeFlagSet();
+  virtual bool isDeviceConfigChangeReadyToSend();
+  virtual bool setDeviceConfigChangeFlag();
+  virtual bool clearDeviceConfigChangeFlag();
+
+  virtual bool setChannelConfigChangeFlag(int channelNo, int configType = 0);
+  virtual bool clearChannelConfigChangeFlag(int channelNo, int configType = 0);
+  virtual bool isChannelConfigChangeFlagSet(int channelNo, int configType = 0);
+
  protected:
-  uint64_t saveDelayTimestamp = 0;
+  virtual int getBlobSize(const char* key) = 0;
+  uint32_t saveDelayTimestamp = 0;
+  uint32_t deviceConfigUpdateDelayTimestamp = 0;
   uint32_t saveDelayMs = 0;
+  int8_t deviceConfigChangeFlag = -1;
 };
 };  // namespace Supla
 
